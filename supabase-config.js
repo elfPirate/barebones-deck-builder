@@ -16,8 +16,8 @@
    ============================================================ */
 
 window.SUPABASE_CONFIG = {
-  url: "",       // e.g. "https://abcdefghijklm.supabase.co"
-  anonKey: "",   // e.g. "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...."
+  url: "https://xicuoypodfcxojnxltlg.supabase.co",
+  anonKey: "sb_publishable_9K4EYQygejomOH2oE7_5Xg_ZYvdz_qB",
 };
 
 // Convenience: is cloud sync configured?

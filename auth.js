@@ -66,7 +66,12 @@ const api = {
   /** Start the Google OAuth flow (redirects away and back). */
   async signInWithGoogle() {
     if (!enabled) return;
-    const redirectTo = window.location.origin + window.location.pathname;
+    // Build the return URL from the current page, but WITHOUT a trailing slash.
+    // Supabase's Redirect-URL allow-list rejects entries ending in "/", and
+    // GitHub Pages project sites live at a path like /<repo>/ — so we keep the
+    // path but drop the slash to match the allow-list entry exactly.
+    const redirectTo = (window.location.origin + window.location.pathname)
+      .replace(/\/+$/, "");
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo },

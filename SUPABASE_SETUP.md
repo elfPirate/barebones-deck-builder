@@ -1,4 +1,4 @@
-# Supabase + Google sign-in setup
+# Supabad thse + Google sign-in setup
 
 This app runs **entirely in the browser** (static files). Supabase is used
 **only** for two things:
@@ -67,11 +67,37 @@ Supabase needs a Google "client ID" and "client secret" so it can talk to Google
 
 1. Supabase dashboard → **Authentication → Providers → Google** → toggle **on**.
 2. Paste the **Client ID** and **Client secret** from Part 3 → **Save**.
-3. Go to **Authentication → URL Configuration**:
-   - **Site URL**: your hosted app URL, e.g.
-     `https://elfPirate.github.io/barebones-deck-builder/`
-   - **Redirect URLs → Add URL**: the same URL (and add
-     `http://localhost:8000/` if you develop locally).
+
+
+
+
+
+3. Go to **Authentication → URL Configuration** and enter these:
+
+   | Field | Value | Rule |
+   |---|---|---|
+   | **Site URL** | `https://<user>.github.io` | **Origin only** — no path, no trailing slash |
+   | **Redirect URLs** | `https://<user>.github.io/<repo>` | Path OK, **no trailing slash** |
+
+   For this repo specifically:
+
+   ```
+   Site URL:        https://elfPirate.github.io
+   Redirect URLs:   https://elfPirate.github.io/barebones-deck-builder
+                    http://localhost:8000            (optional, for local dev)
+   ```
+
+   > ⚠️ **`Invalid Origin: URIs must not contain a path or end with "/"`**
+   > This error means you put a path or a trailing slash in a field that
+   > forbids it. Fixes:
+   > - **Site URL** must be a bare origin → `https://elfPirate.github.io`
+   >   (drop `/barebones-deck-builder/`).
+   > - **Redirect URLs**: a path is allowed, but **remove the trailing `/`**
+   >   → `https://elfPirate.github.io/barebones-deck-builder`.
+   >
+   > The app itself sends the return URL **without** a trailing slash, so the
+   > Redirect-URL entry above must match it exactly.
+
 4. Save.
 
 ## Part 5 — Put the keys in `supabase-config.js`
