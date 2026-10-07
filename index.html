@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Barebones Deck Builder</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Barebones Deck Builder</h1>
+
+    <!-- Menu bar (File / Deck / View / Search) -->
+    <nav class="menubar" id="menubar">
+      <div class="menu" data-menu="file">
+        <button class="menu-btn" aria-haspopup="true" aria-expanded="false">File</button>
+        <div class="menu-dropdown" role="menu">
+          <button class="menu-item" id="new-deck" role="menuitem">New deck</button>
+          <button class="menu-item" id="save-deck" role="menuitem">Save</button>
+          <button class="menu-item" id="load-deck" role="menuitem">Load…</button>
+          <div class="menu-sep"></div>
+          <button class="menu-item" id="import-deck" role="menuitem">Import…</button>
+          <button class="menu-item" id="export-deck" role="menuitem">Export to clipboard</button>
+        </div>
+      </div>
+
+      <div class="menu" data-menu="deck">
+        <button class="menu-btn" aria-haspopup="true" aria-expanded="false">Deck</button>
+        <div class="menu-dropdown" role="menu">
+          <div class="menu-label">Sort cards by</div>
+          <button class="menu-item checkable" data-sort="name" role="menuitemradio">Name</button>
+          <button class="menu-item checkable" data-sort="cmc" role="menuitemradio">Mana value</button>
+          <button class="menu-item checkable" data-sort="color" role="menuitemradio">Color</button>
+          <button class="menu-item checkable" data-sort="type" role="menuitemradio">Type</button>
+          <div class="menu-sep"></div>
+          <div class="menu-label">Group by</div>
+          <button class="menu-item checkable" data-group="type" role="menuitemradio">Type</button>
+          <button class="menu-item checkable" data-group="cmc" role="menuitemradio">Mana value</button>
+          <button class="menu-item checkable" data-group="color" role="menuitemradio">Color</button>
+          <button class="menu-item checkable" data-group="none" role="menuitemradio">None (single list)</button>
+          <div class="menu-sep"></div>
+          <div class="menu-label">Printing</div>
+          <button class="menu-item" id="menu-all-cheapest" role="menuitem">All cards → cheapest printing</button>
+          <button class="menu-item" id="menu-all-newest" role="menuitem">All cards → newest printing</button>
+          <div class="menu-sep"></div>
+          <div class="menu-label">Format</div>
+          <div id="menu-format-list"></div>
+        </div>
+      </div>
+
+      <div class="menu" data-menu="view">
+        <button class="menu-btn" aria-haspopup="true" aria-expanded="false">View</button>
+        <div class="menu-dropdown" role="menu">
+          <button class="menu-item checkable" data-view="twoColumn" role="menuitemcheckbox">Two-column cards</button>
+          <button class="menu-item checkable" data-view="gridView" role="menuitemcheckbox">Card grid</button>
+          <button class="menu-item checkable" data-view="showPrices" role="menuitemcheckbox">Show prices</button>
+          <button class="menu-item checkable" data-view="showMana" role="menuitemcheckbox">Show mana costs</button>
+          <div class="menu-sep"></div>
+          <button class="menu-item" id="view-expand-all" role="menuitem">Expand all sections</button>
+          <button class="menu-item" id="view-collapse-all" role="menuitem">Collapse all sections</button>
+        </div>
+      </div>
+
+      <div class="menu" data-menu="search">
+        <button class="menu-btn" aria-haspopup="true" aria-expanded="false">Search</button>
+        <div class="menu-dropdown" role="menu">
+          <div class="menu-label">Sort results by</div>
+          <div id="menu-sort-list"></div>
+          <div class="menu-sep"></div>
+          <button class="menu-item checkable" id="menu-ignore-format" role="menuitemcheckbox">Ignore format restrictions</button>
+        </div>
+      </div>
+    </nav>
+
+    <div class="menubar-spacer"></div>
+    <input id="deck-name" type="text" placeholder="Deck name" value="Untitled Deck" />
+
+    <!-- Hidden native controls keep existing logic working as the source of truth -->
+    <select id="format-select" hidden>
+      <option value="commander" selected>Commander</option>
+      <option value="brawl">Brawl</option>
+      <option value="standardbrawl">Standard Brawl</option>
+      <option value="oathbreaker">Oathbreaker</option>
+      <option value="standard">Standard</option>
+      <option value="pioneer">Pioneer</option>
+      <option value="modern">Modern</option>
+      <option value="legacy">Legacy</option>
+      <option value="vintage">Vintage</option>
+      <option value="pauper">Pauper</option>
+      <option value="commander_nonpartner">Commander (non-partner)</option>
+      <option value="">No format</option>
+    </select>
+    <select id="sort-select" hidden>
+      <option value="edhrec" selected>EDHREC rank</option>
+      <option value="name">Name</option>
+      <option value="set">Set / release date</option>
+      <option value="released">Release date</option>
+      <option value="rarity">Rarity</option>
+      <option value="color">Color</option>
+      <option value="usd">Price (USD)</option>
+      <option value="tix">Price (TIX)</option>
+      <option value="eur">Price (EUR)</option>
+      <option value="cmc">Mana value</option>
+      <option value="power">Power</option>
+      <option value="toughness">Toughness</option>
+      <option value="artist">Artist</option>
+      <option value="review">Set review</option>
+    </select>
+    <input type="checkbox" id="ignore-format" hidden />
+  </header>
+
+  <main class="layout">
+    <!-- LEFT: SEARCH -->
+    <section class="panel search-panel">
+      <div class="panel-header">
+        <span class="panel-title">Search</span>
+        <span class="panel-sub" id="search-sort-label"></span>
+      </div>
+      <div class="search-row">
+        <input id="search-input" type="text" placeholder="e.g. lightning bolt, cmc<=3, o:flying" autocomplete="off" />
+        <button id="search-btn">Search</button>
+      </div>
+      <div class="search-meta" id="search-meta"></div>
+      <div id="search-results" class="results"></div>
+      <div class="resize-handle" id="search-resize" title="Drag to resize search panel" aria-hidden="true"></div>
+    </section>
+
+    <!-- CENTER: DECK (with Considering + Sideboard docks at the bottom) -->
+    <section class="panel deck-panel">
+      <div class="panel-header">
+        <span class="panel-title">Deck</span>
+        <span class="panel-sub" id="deck-count">0 cards</span>
+      </div>
+      <div class="deck-filters">
+        <input id="deck-filter" type="text" placeholder="Filter deck..." />
+      </div>
+      <div id="deck-list" class="deck-list"></div>
+
+      <!-- Sideboard dock (collapsible, resizable) -->
+      <div class="board-dock" id="side-dock">
+        <div class="dock-resize" id="side-resize" title="Drag to resize (double-click to reset)"></div>
+        <button class="dock-toggle" id="side-toggle" aria-expanded="false">
+          <span class="chevron">▶</span>
+          <span class="consider-title">Sideboard</span>
+          <span class="hint" id="side-count">0 cards</span>
+        </button>
+        <div class="dock-body" id="side-body">
+          <div class="deck-filters">
+            <input id="side-filter" type="text" placeholder="Filter sideboard..." />
+          </div>
+          <div id="sideboard-list" class="deck-list"></div>
+        </div>
+      </div>
+
+      <!-- Considering dock (collapsible, resizable) -->
+      <div class="board-dock" id="consider-dock">
+        <div class="dock-resize" id="consider-resize" title="Drag to resize (double-click to reset)"></div>
+        <button class="dock-toggle" id="consider-toggle" aria-expanded="false">
+          <span class="chevron">▶</span>
+          <span class="consider-title">Considering</span>
+          <span class="hint" id="consider-count">0 cards</span>
+        </button>
+        <div class="dock-body" id="consider-body">
+          <div class="deck-filters">
+            <input id="consider-filter" type="text" placeholder="Filter considering..." />
+          </div>
+          <div id="consider-list" class="deck-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT: PREVIEW + STATS -->
+    <aside class="panel right-panel">
+      <div class="panel-header">
+        <span class="panel-title">Card Preview</span>
+      </div>
+      <div id="preview" class="preview">
+        <div class="preview-placeholder">Hover a card to preview.</div>
+      </div>
+
+      <div class="stats-block">
+        <div class="panel-header">
+          <span class="panel-title">Stats</span>
+        </div>
+        <div id="stats" class="stats"></div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Card actions context menu (shared) -->
+  <div id="card-menu" class="card-menu hidden" role="menu"></div>
+
+  <!-- Import modal -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-content">
+      <h3 id="modal-title">Import Decklist</h3>
+      <p class="hint" id="modal-hint">Paste a decklist. Lines like <code>2 Lightning Bolt</code> or <code>2x Lightning Bolt</code> or <code>Lightning Bolt</code> work.</p>
+      <textarea id="modal-text" rows="12" placeholder="1 Sol Ring&#10;4 Lightning Bolt&#10;..."></textarea>
+      <div class="modal-actions">
+        <button id="modal-cancel">Cancel</button>
+        <button id="modal-confirm" class="primary">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Printings picker modal -->
+  <div id="printing-modal" class="modal hidden">
+    <div class="modal-content printing-modal-content">
+      <div class="printing-modal-header">
+        <h3 id="printing-title">Printings</h3>
+        <div class="printing-actions" id="printing-actions"></div>
+        <button class="modal-x" id="printing-close" title="Close" aria-label="Close">✕</button>
+      </div>
+      <div class="printing-body" id="printing-body"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
