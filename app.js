@@ -1930,6 +1930,8 @@ function saveToLocal() {
   localStorage.setItem(LS_KEY, JSON.stringify(store));
   // Also keep the working-deck snapshot in sync for auto-restore on reload.
   saveCurrentDeck();
+  // Mirror to the cloud when signed in (debounced; no-op otherwise).
+  queueCloudSave(name);
 }
 function loadSavedDeck(name) {
   const store = loadStore();
@@ -1952,6 +1954,212 @@ function loadSavedDeck(name) {
   renderStats();
   updateBoardTabs();
   return true;
+}
+
+/* ============================================================
+   CLOUD SYNC (Supabase)  — optional
+   ------------------------------------------------------------
+   When the user signs in with Google, named decks are mirrored to
+   a Supabase `decks` table (see supabase/schema.sql). localStorage
+   remains the source of truth for the *current working* deck, so
+   the app keeps working fully offline; cloud sync only adds a
+   cross-device copy of each named deck.
+
+   All of this no-ops when window.BarebonesAuth is absent/disabled.
+   ============================================================ */
+function cloudAuth() { return window.BarebonesAuth || null; }
+function isCloudEnabled() { const a = cloudAuth(); return !!(a && a.enabled); }
+function isSignedIn() { const a = cloudAuth(); return !!(a && a.getUser && a.getUser()); }
+
+// The user's cloud decks as last listed: [{ id, name, format, commanderId, updated }].
+let cloudDeckIndex = [];
+
+// Turn a local store entry (full card objects) into the DB payload shape:
+// only Scryfall printing ids + quantities + board, never card data.
+function entryToCloudCards(entry) {
+  const out = [];
+  const pushBoard = (arr, board) => {
+    (arr || []).forEach((e) => {
+      if (e && e.id) out.push({ id: e.id, qty: e.qty || 1, board });
+    });
+  };
+  // The commander is stored as a deck column, not a card row — skip it here.
+  pushBoard(entry.cards, "main");
+  pushBoard(entry.sideboard, "sideboard");
+  pushBoard(entry.considering, "considering");
+  return out;
+}
+
+// Debounced push of a single named deck to the cloud.
+const pendingCloudSaves = new Map();
+let cloudTimer = null;
+function queueCloudSave(name) {
+  if (!isSignedIn()) return;
+  const store = loadStore();
+  const entry = store[name];
+  if (!entry) return;
+  pendingCloudSaves.set(name, entry);
+  setSyncIndicator("busy");
+  clearTimeout(cloudTimer);
+  cloudTimer = setTimeout(flushCloudSaves, 800);
+}
+async function flushCloudSaves() {
+  const a = cloudAuth();
+  if (!a || !isSignedIn() || pendingCloudSaves.size === 0) return;
+  const batch = [...pendingCloudSaves.entries()];
+  pendingCloudSaves.clear();
+  try {
+    for (const [name, entry] of batch) {
+      await a.saveDeck(name, {
+        format: entry.format || "",
+        commanderId: entry.commanderId || null,
+        cards: entryToCloudCards(entry),
+      });
+    }
+    setSyncIndicator("ok");
+    // Refresh the local list of cloud decks so the Load menu stays current.
+    refreshCloudIndex();
+  } catch (err) {
+    console.error("Cloud save failed:", err);
+    setSyncIndicator("error");
+  }
+}
+
+// Refresh the cached list of the user's cloud decks (names/ids/updated).
+async function refreshCloudIndex() {
+  const a = cloudAuth();
+  if (!a || !isSignedIn()) { cloudDeckIndex = []; return; }
+  try {
+    cloudDeckIndex = await a.listDecks();
+  } catch (err) {
+    console.error("Cloud list failed:", err);
+    cloudDeckIndex = [];
+  }
+}
+
+// Rehydrate full card entry objects from a set of Scryfall printing ids
+// via one bulk /cards/collection call. Returns a map: id -> entry.
+async function rehydrateCardsByIds(ids) {
+  const unique = [...new Set(ids.filter(Boolean))];
+  const map = {};
+  if (!unique.length) return map;
+  // Scryfall collection is limited to 75 identifiers per request.
+  for (let i = 0; i < unique.length; i += 75) {
+    const chunk = unique.slice(i, i + 75);
+    try {
+      const res = await fetch(SCRYFALL_COLLECTION, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ identifiers: chunk.map((id) => ({ id })) }),
+      });
+      const data = await res.json();
+      (data.data || []).forEach((card) => { map[card.id] = makeEntry(card, 1); });
+    } catch (err) {
+      console.error("Rehydrate failed for a chunk:", err);
+    }
+  }
+  return map;
+}
+
+// Load one cloud deck by name: fetch its rows, rehydrate, populate boards.
+async function loadCloudDeck(name) {
+  const a = cloudAuth();
+  if (!a || !isSignedIn()) return false;
+  const meta = cloudDeckIndex.find((d) => d.name === name);
+  if (!meta) return false;
+  setSyncIndicator("busy");
+  try {
+    const deckData = await a.loadDeck(meta.id);
+    if (!deckData) return false;
+    const cardMap = await rehydrateCardsByIds(deckData.cards.map((c) => c.id));
+
+    deck = [];
+    sideboard = [];
+    considering = [];
+    commanderId = null;
+
+    deckData.cards.forEach((c) => {
+      const base = cardMap[c.id];
+      if (!base) return; // a printing we couldn't resolve; skip
+      const entry = { ...base, qty: c.qty };
+      if (c.board === "sideboard") sideboard.push(entry);
+      else if (c.board === "considering") considering.push(entry);
+      else deck.push(entry);
+    });
+
+    if (deckData.commanderId) commanderId = deckData.commanderId;
+    deckNameEl.value = deckData.name || name;
+    const fmtEl = $("format-select");
+    if (fmtEl && deckData.format !== undefined) fmtEl.value = deckData.format;
+
+    syncMenuChecks();
+    renderDeck(); renderSideboard(); renderConsidering(); renderStats(); updateBoardTabs();
+    setSyncIndicator("ok");
+    return true;
+  } catch (err) {
+    console.error("Cloud load failed:", err);
+    setSyncIndicator("error");
+    return false;
+  }
+}
+
+// On sign-in: pull the user's cloud decks, and push up any purely-local decks
+// whose names aren't in the cloud yet. (Cloud owns the deck list; localStorage
+// remains the working cache.)
+async function syncFromCloud() {
+  const a = cloudAuth();
+  if (!a || !isSignedIn()) return;
+  setSyncIndicator("busy");
+  try {
+    await refreshCloudIndex();
+    const cloudNames = new Set(cloudDeckIndex.map((d) => d.name));
+    const store = loadStore();
+    // Push local-only decks so nothing is lost when first signing in.
+    for (const name of Object.keys(store)) {
+      if (!cloudNames.has(name)) queueCloudSave(name);
+    }
+    setSyncIndicator("ok");
+  } catch (err) {
+    console.error("Cloud sync failed:", err);
+    setSyncIndicator("error");
+  }
+}
+
+// Small colored dot in the auth area reflecting sync status.
+function setSyncIndicator(state) {
+  const dot = $("auth-sync-dot");
+  if (!dot) return;
+  dot.className = "auth-sync-dot" + (state ? " " + state : "");
+}
+
+// Reflect auth state in the top-bar UI.
+function renderAuthUI(user) {
+  const area = $("auth-area");
+  const signinBtn = $("auth-signin");
+  const userBox = $("auth-user");
+  if (!area) return;
+  if (!isCloudEnabled()) { area.hidden = true; return; }
+  area.hidden = false;
+
+  if (user) {
+    if (signinBtn) signinBtn.hidden = true;
+    if (userBox) {
+      userBox.hidden = false;
+      const avatar = $("auth-avatar");
+      const nameEl = $("auth-name");
+      const meta = user.user_metadata || {};
+      const label = meta.full_name || meta.name || user.email || "Signed in";
+      if (nameEl) nameEl.textContent = label;
+      if (avatar) {
+        const pic = meta.avatar_url || meta.picture;
+        if (pic) { avatar.src = pic; avatar.hidden = false; }
+        else avatar.hidden = true;
+      }
+    }
+  } else {
+    if (signinBtn) signinBtn.hidden = false;
+    if (userBox) userBox.hidden = true;
+  }
 }
 
 /* ============================================================
@@ -2387,6 +2595,52 @@ if (considerToggle) setupDropTarget(considerToggle, handleDropOnConsidering, ["s
 const searchPanelEl = document.querySelector(".search-panel");
 if (searchPanelEl) setupDropTarget(searchPanelEl, handleDropOnSearch, ["deck", "consider", "side"]);
 
+/* ---------------- Auth / cloud sync wiring (optional) ----------------
+   The Supabase auth module is loaded as an ES module and may not be ready
+   yet when this classic script runs, so we wait for either the ready event
+   or (if it already fired) a poll. Everything no-ops if Supabase is off. */
+let authUIInitialized = false;
+function initAuthUI() {
+  if (authUIInitialized) return true;
+  const a = cloudAuth();
+  if (!a) return false;
+  authUIInitialized = true;
+
+  // Toggle the sign-in / user chip based on auth state.
+  renderAuthUI(a.getUser());
+  a.onChange((user) => {
+    renderAuthUI(user);
+    if (user) {
+      // On sign-in, reconcile cloud + local decks.
+      syncFromCloud();
+    } else {
+      setSyncIndicator("");
+    }
+  });
+
+  const signinBtn = $("auth-signin");
+  if (signinBtn) signinBtn.addEventListener("click", () => a.signInWithGoogle());
+  const signoutBtn = $("auth-signout");
+  if (signoutBtn) signoutBtn.addEventListener("click", () => a.signOut());
+
+  // If already signed in (e.g. returning from OAuth redirect), sync now.
+  if (a.getUser()) syncFromCloud();
+  return true;
+}
+
+if (isCloudEnabled()) {
+  if (!initAuthUI()) {
+    // Auth module not loaded yet — wait briefly for it.
+    let tries = 0;
+    const t = setInterval(() => {
+      if (initAuthUI() || ++tries > 40) clearInterval(t);
+    }, 100);
+    window.addEventListener("barebones-auth-ready", () => {
+      if (initAuthUI()) clearInterval(t);
+    }, { once: true });
+  }
+}
+
 // --- Card actions menu: close on outside click / Escape / scroll / resize ---
 document.addEventListener("click", (ev) => {
   if (isCardMenuOpen() && !cardMenuEl.contains(ev.target)) closeCardMenu();
@@ -2423,13 +2677,26 @@ if (saveDeckBtn) saveDeckBtn.addEventListener("click", () => {
 });
 
 const loadDeckBtn = $("load-deck");
-if (loadDeckBtn) loadDeckBtn.addEventListener("click", () => {
+if (loadDeckBtn) loadDeckBtn.addEventListener("click", async () => {
+  // When signed in, the cloud is the deck library (Moxfield-style): list the
+  // user's cloud decks. Otherwise fall back to the local browser store.
+  if (isSignedIn()) {
+    await refreshCloudIndex();
+    if (!cloudDeckIndex.length) return alert("No decks in your account yet. Build one and hit Save.");
+    const names = cloudDeckIndex.map((d) => d.name);
+    const name = prompt("Load which deck?\n\n" + names.map((n, i) => `${i + 1}. ${n}`).join("\n"), names[0]);
+    if (!name) return;
+    const idx = parseInt(name, 10);
+    const chosen = names[idx - 1] || name;
+    if (!(await loadCloudDeck(chosen))) alert("Deck not found: " + chosen);
+    return;
+  }
+  // --- Local (signed-out) path ---
   const store = loadStore();
   const names = Object.keys(store);
   if (!names.length) return alert("No saved decks.");
   const name = prompt("Load which deck?\n\n" + names.map((n, i) => `${i + 1}. ${n}`).join("\n"), names[0]);
   if (!name) return;
-  // allow picking by index too
   const idx = parseInt(name, 10);
   const chosen = names[idx - 1] || name;
   if (!loadSavedDeck(chosen)) alert("Deck not found: " + chosen);

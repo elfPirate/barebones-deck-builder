@@ -881,3 +881,66 @@ body.row-resizing { cursor: row-resize; user-select: none; }
 ::-webkit-scrollbar-thumb { background: #424242; border-radius: 0; }
 ::-webkit-scrollbar-thumb:hover { background: #4f4f4f; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* ===== AUTH (Supabase / Google) ===== */
+.auth-area { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+.auth-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  background: #3a3d41;
+  border: 1px solid var(--border);
+  color: var(--text-bright);
+  border-radius: 3px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.auth-btn:hover { background: #45494e; border-color: var(--accent); }
+
+/* The Google "G" mark */
+.auth-g {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #fff;
+  color: #4285f4;
+  font-weight: 700;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.auth-user { display: flex; align-items: center; gap: 8px; }
+.auth-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--panel-3);
+}
+.auth-name {
+  color: var(--text-bright);
+  font-size: 12px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.auth-signout { font-size: 11px; padding: 3px 8px; }
+
+/* A small "synced" cloud indicator, shown while signed in. */
+.auth-sync-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+.auth-sync-dot.ok { background: var(--accent-2); }
+.auth-sync-dot.busy { background: var(--gold); }
+.auth-sync-dot.error { background: var(--danger); }

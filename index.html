@@ -75,6 +75,19 @@
     <div class="menubar-spacer"></div>
     <input id="deck-name" type="text" placeholder="Deck name" value="Untitled Deck" />
 
+    <!-- Auth (Supabase / Google) — hidden unless cloud sync is configured -->
+    <div id="auth-area" class="auth-area" hidden>
+      <button id="auth-signin" class="auth-btn" title="Sign in to sync decks to the cloud">
+        <span class="auth-g">G</span> Sign in with Google
+      </button>
+      <div id="auth-user" class="auth-user" hidden>
+        <span id="auth-sync-dot" class="auth-sync-dot" title="Cloud sync status"></span>
+        <img id="auth-avatar" class="auth-avatar" alt="" />
+        <span id="auth-name" class="auth-name"></span>
+        <button id="auth-signout" class="auth-btn auth-signout" title="Sign out">Sign out</button>
+      </div>
+    </div>
+
     <!-- Hidden native controls keep existing logic working as the source of truth -->
     <select id="format-select" hidden>
       <option value="commander" selected>Commander</option>
@@ -215,6 +228,11 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <!-- Public Supabase config (URL + anon key; safe to expose). -->
+  <script src="supabase-config.js"></script>
+  <!-- Auth + cloud sync (ES module; no-op when Supabase isn't configured). -->
+  <script type="module" src="auth.js"></script>
+  <!-- Main app (classic script). -->
+  <script src="app.js" defer></script>
 </body>
 </html>

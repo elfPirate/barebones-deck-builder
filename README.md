@@ -112,6 +112,13 @@ thing.
 - **Persistence** — decks, Considering boards, commanders, and view
   preferences (sort/group/columns) auto-save to `localStorage`. Save/Load
   multiple named decks from the **File** menu.
+- **Optional per-user cloud storage (Supabase + Google sign-in)** — sign in
+  with Google and your named decks are stored in a **Supabase Postgres**
+  database, tied to your account (not the browser) — so they follow you across
+  devices, like Moxfield. Only Scryfall **printing ids + quantities** are saved
+  (no card text/images), and decks are re-hydrated from Scryfall on load.
+  Signed out, the app works exactly as before from `localStorage`. See
+  [`SUPABASE_SETUP.md`](SUPABASE_SETUP.md) to enable it.
 
 ## Search syntax cheat sheet
 
@@ -133,6 +140,10 @@ Full reference: https://scryfall.com/docs/syntax
 - `index.html` — layout
 - `styles.css` — styling
 - `app.js` — Scryfall integration + deck logic
+- `supabase-config.js` — **your** Supabase URL + anon key (blank = local-only)
+- `auth.js` — Google sign-in + cloud deck CRUD (ES module)
+- `supabase/schema.sql` — DB tables + Row Level Security policies
+- `SUPABASE_SETUP.md` — step-by-step setup for Google sign-in + cloud storage
 - `serve.py` — tiny static server that auto-shuts down when the tab closes
 - `Open Deck Builder.command` — double-clickable launcher for `serve.py`
 
@@ -143,4 +154,5 @@ Full reference: https://scryfall.com/docs/syntax
 - Respects Scryfall's rate limits by using their batch collection endpoint for
   imports and debouncing keystrokes.
 - One commander per deck; no format/legality validation yet — bare bones.
-- Data is stored per-browser in `localStorage`.
+- Data is stored per-browser in `localStorage` by default; enable the optional
+  Supabase integration for per-user cloud storage.
