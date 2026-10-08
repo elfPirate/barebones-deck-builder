@@ -108,16 +108,20 @@ thing.
   hovered/clicked card is pinned in the right-hand preview panel.
 - **Import / Export** — export the decklist to clipboard grouped by type, or
   import a text list (supports `4 Lightning Bolt`, `4x Lightning Bolt`, or
-  bare names). Names resolve via Scryfall's `/cards/collection`.
-- **Persistence** — decks, Considering boards, commanders, and view
-  preferences (sort/group/columns) auto-save to `localStorage`. Save/Load
-  multiple named decks from the **File** menu.
-- **Optional per-user cloud storage (Supabase + Google sign-in)** — sign in
-  with Google and your named decks are stored in a **Supabase Postgres**
-  database, tied to your account (not the browser) — so they follow you across
-  devices, like Moxfield. Only Scryfall **printing ids + quantities** are saved
-  (no card text/images), and decks are re-hydrated from Scryfall on load.
-  Signed out, the app works exactly as before from `localStorage`. See
+  bare names, plus Moxfield-style `#tags`). Names resolve via Scryfall's
+  `/cards/collection`.
+- **Card tags (Moxfield-style)** — add `#tags` to any card (via the `+tag`
+  button on a row, or inline like `1 Sol Ring #ramp #mana` in an imported
+  list). Tags are stored **per deck** in a renameable registry, so renaming a
+  tag updates every card that uses it. (Filtering the deck by tag is planned.)
+- **Accounts & decks (Supabase + Google sign-in)** — sign in with Google and
+  your decks live in a **Supabase Postgres** database, tied to your account
+  (not the browser), so they follow you across devices. The flow is
+  **Home → My Decks → Builder**: a deck library where you create/open/delete
+  decks, and a builder that **autosaves** every change (no Save button). Only
+  Scryfall **printing ids, quantities, boards, and tags** are stored (no card
+  text/images); decks are re-hydrated from Scryfall on open. There is **no
+  local deck storage** — the backend is the source of truth. See
   [`SUPABASE_SETUP.md`](SUPABASE_SETUP.md) to enable it.
 
 ## Search syntax cheat sheet

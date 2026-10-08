@@ -7,20 +7,59 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <!-- ============================================================
+       SCREEN: HOME (sign in)
+       ============================================================ -->
+  <section id="screen-home" class="screen home-screen" hidden>
+    <div class="home-card">
+      <h1 class="home-title">Barebones Deck Builder</h1>
+      <p class="home-sub">Build and store Magic: The Gathering decks in your account.</p>
+      <button id="home-signin" class="auth-btn auth-btn-lg" hidden>
+        <span class="auth-g">G</span> Sign in with Google
+      </button>
+      <p class="home-note" id="home-note">Sign in to continue.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       SCREEN: MY DECKS (library)
+       ============================================================ -->
+  <section id="screen-decks" class="screen decks-screen" hidden>
+    <header class="decks-topbar">
+      <h1 class="decks-title">My Decks</h1>
+      <div class="decks-actions">
+        <button id="new-deck-btn" class="btn-primary">+ New deck</button>
+        <span id="decks-sync-dot" class="auth-sync-dot" title="Save status"></span>
+        <div class="auth-user" id="decks-user" hidden>
+          <img id="decks-avatar" class="auth-avatar" alt="" />
+          <span id="decks-name" class="auth-name"></span>
+          <button id="decks-signout" class="auth-btn auth-signout">Sign out</button>
+        </div>
+      </div>
+    </header>
+    <div id="decks-list" class="decks-list"></div>
+    <div id="decks-empty" class="decks-empty" hidden>
+      <p>You don't have any decks yet.</p>
+      <button id="new-deck-btn-2" class="btn-primary">Create your first deck</button>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       SCREEN: DECK BUILDER
+       ============================================================ -->
+  <div id="screen-builder" class="screen builder-screen" hidden>
   <header class="topbar">
-    <h1>Barebones Deck Builder</h1>
+    <button id="back-to-decks" class="topbar-back" title="Back to My Decks">← Decks</button>
 
     <!-- Menu bar (File / Deck / View / Search) -->
     <nav class="menubar" id="menubar">
       <div class="menu" data-menu="file">
         <button class="menu-btn" aria-haspopup="true" aria-expanded="false">File</button>
         <div class="menu-dropdown" role="menu">
-          <button class="menu-item" id="new-deck" role="menuitem">New deck</button>
-          <button class="menu-item" id="save-deck" role="menuitem">Save</button>
-          <button class="menu-item" id="load-deck" role="menuitem">Load…</button>
-          <div class="menu-sep"></div>
           <button class="menu-item" id="import-deck" role="menuitem">Import…</button>
           <button class="menu-item" id="export-deck" role="menuitem">Export to clipboard</button>
+          <div class="menu-sep"></div>
+          <button class="menu-item" id="delete-deck" role="menuitem">Delete deck</button>
         </div>
       </div>
 
@@ -74,19 +113,7 @@
 
     <div class="menubar-spacer"></div>
     <input id="deck-name" type="text" placeholder="Deck name" value="Untitled Deck" />
-
-    <!-- Auth (Supabase / Google) — hidden unless cloud sync is configured -->
-    <div id="auth-area" class="auth-area" hidden>
-      <button id="auth-signin" class="auth-btn" title="Sign in to sync decks to the cloud">
-        <span class="auth-g">G</span> Sign in with Google
-      </button>
-      <div id="auth-user" class="auth-user" hidden>
-        <span id="auth-sync-dot" class="auth-sync-dot" title="Cloud sync status"></span>
-        <img id="auth-avatar" class="auth-avatar" alt="" />
-        <span id="auth-name" class="auth-name"></span>
-        <button id="auth-signout" class="auth-btn auth-signout" title="Sign out">Sign out</button>
-      </div>
-    </div>
+    <span id="builder-save-status" class="save-status" title="Autosave status">Saved</span>
 
     <!-- Hidden native controls keep existing logic working as the source of truth -->
     <select id="format-select" hidden>
@@ -199,6 +226,7 @@
       </div>
     </aside>
   </main>
+  </div><!-- /screen-builder -->
 
   <!-- Card actions context menu (shared) -->
   <div id="card-menu" class="card-menu hidden" role="menu"></div>
@@ -207,8 +235,8 @@
   <div id="modal" class="modal hidden">
     <div class="modal-content">
       <h3 id="modal-title">Import Decklist</h3>
-      <p class="hint" id="modal-hint">Paste a decklist. Lines like <code>2 Lightning Bolt</code> or <code>2x Lightning Bolt</code> or <code>Lightning Bolt</code> work.</p>
-      <textarea id="modal-text" rows="12" placeholder="1 Sol Ring&#10;4 Lightning Bolt&#10;..."></textarea>
+      <p class="hint" id="modal-hint">Paste a decklist. Lines like <code>2 Lightning Bolt</code> or <code>2x Lightning Bolt #ramp</code> work. Tags with <code>#tag</code> are supported.</p>
+      <textarea id="modal-text" rows="12" placeholder="1 Sol Ring #ramp&#10;4 Lightning Bolt&#10;..."></textarea>
       <div class="modal-actions">
         <button id="modal-cancel">Cancel</button>
         <button id="modal-confirm" class="primary">Confirm</button>

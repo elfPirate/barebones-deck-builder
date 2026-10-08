@@ -1,16 +1,24 @@
-# Supabad thse + Google sign-in setup
+# Supabase + Google sign-in setup
 
-This app runs **entirely in the browser** (static files). Supabase is used
-**only** for two things:
-
-1. **Google sign-in** (authentication)
-2. **Cloud deck storage** (a `decks` table in Postgres)
+This app runs **entirely in the browser** (static files on GitHub Pages).
+Supabase provides **authentication** (Google sign-in) and **deck storage**
+(Postgres). There is **no local deck storage** — the backend is the source of
+truth. Only UI preferences (sort/group/view/dock sizes) and card caches live
+in `localStorage`.
 
 > **Hosting note:** Supabase does *not* host static websites. The front-end is
 > hosted on **GitHub Pages** (free). Supabase provides the database + auth.
 
-Until you fill in `supabase-config.js`, the app runs in purely-local mode
-(`localStorage`) and no sign-in button appears. Nothing breaks.
+## Screens / flow
+
+```
+Home (sign in)  →  My Decks (library)  →  Deck Builder (autosaves)
+```
+
+- Signed out → **Home**.
+- Signed in → **My Decks**, where you create/open/delete decks.
+- Opening a deck → **Builder**, which **autosaves** to Supabase (debounced
+  ~1s after you stop editing). There is no Save button.
 
 ---
 
@@ -23,20 +31,28 @@ Until you fill in `supabase-config.js`, the app runs in purely-local mode
 
 ## Part 2 — Create the tables + security rules (~1 min)
 
-1. In the left sidebar, open **SQL Editor → New query**.
-2. Open [`supabase/schema.sql`](supabase/schema.sql) from this repo, copy the
-   **whole file**, paste it into the editor, and click **Run**.
-3. You should see "Success". This creates two tables with **Row Level Security**
-   so each user can only ever see their own decks:
+There are **two** SQL files; run them **in order** via
+**SQL Editor → New query → paste → Run**:
 
-   | Table | Holds |
-   |---|---|
-   | `decks` | One row per named deck: `name`, `format`, `commander_scryfall_id`, owner `user_id`. |
-   | `deck_cards` | One row per card: `deck_id`, `scryfall_id`, `quantity`, `board_type` (`main`/`sideboard`/`considering`). |
+1. [`supabase/schema.sql`](supabase/schema.sql) — base tables.
+2. [`supabase/migrations/001_tags_and_metadata.sql`](supabase/migrations/001_tags_and_metadata.sql)
+   — deck metadata + the tag system. **Additive & idempotent** (safe to re-run;
+   never drops data).
 
-   **No MTG card data is stored** — only Scryfall *printing ids* and quantities.
-   Card names, images, and prices are fetched live from Scryfall when a deck is
-   opened (one bulk `/cards/collection` call).
+After both, you have:
+
+| Table | Holds |
+|---|---|
+| `decks` | one row per deck: `name`, `format`, `commander_scryfall_id`, `description`, `is_public`, `color_identity`, owner `user_id`. |
+| `deck_cards` | one row per card: `deck_id`, `scryfall_id`, `quantity`, `board_type` (`main`/`sideboard`/`considering`). |
+| `deck_tags` | the per-deck **tag registry** (rename here = renamed everywhere). |
+| `deck_card_tags` | join: which tags a card carries. |
+
+All four have **Row Level Security** scoped to the owner, so the public
+publishable key can only touch the signed-in user's data.
+
+**No MTG card data is stored** — only Scryfall *printing ids*. Card names,
+images, and prices are fetched live from Scryfall when a deck is opened.
 
 ## Part 3 — Create a Google OAuth client (~4 min)
 
@@ -139,9 +155,8 @@ Supabase needs a Google "client ID" and "client secret" so it can talk to Google
 | No sign-in button | `supabase-config.js` still has blank `url`/`anonKey`. |
 | `redirect_uri_mismatch` from Google | The Supabase callback URL in Google's redirect URIs must exactly match `https://<ref>.supabase.co/auth/v1/callback`. |
 | Redirects to `localhost` after sign-in | Update **Site URL** and **Redirect URLs** in Supabase to your GitHub Pages URL. |
-| Signed in, but "row level security" error | You skipped `supabase/schema.sql` (Part 2), or RLS is on with no policies. Re-run the schema file. |
-| Decks don't sync | Cloud syncs *named* decks on save. Check the colored dot in the top bar (green = synced). |
-| "No decks in your account yet" on Load | You're signed in but haven't saved a deck to the cloud yet — build one and hit **Save** (File menu). |
+| Signed in, but "row level security" error | You skipped a SQL file in Part 2, or RLS is on with no policies. Re-run both files. |
+| Deck save fails silently | Missing `decks`/`deck_cards`/`deck_tags` tables — run the migration (Part 2). |
 | A card shows as missing after loading on another device | Its printing was removed/renamed by Scryfall; the rehydrate step skips ids Scryfall no longer returns. |
 
 ---
@@ -149,19 +164,20 @@ Supabase needs a Google "client ID" and "client secret" so it can talk to Google
 ## How decks are stored & synced
 
 ```
-localStorage (working cache)          Supabase (per-user library)
-   barebones_decks  ──────save──────▶   decks (name, format, commander)
-   barebones_current                     └─ deck_cards (scryfall_id, qty, board)
-        ▲                                        │
-        └──────────load / rehydrate◀─────────────┘
-                       │
-             GET /cards/collection  (Scryfall)
-             → full card objects for display
+                Supabase (source of truth, per user)
+   decks  ──▶  name, format, commander, description, is_public, color_identity
+     │
+     ├─ deck_cards ──▶ scryfall_id, qty, board_type
+     └─ deck_tags  ──▶ tag registry (per deck)
+            ▲  └─ deck_card_tags ──▶ which tag on which card
+            │
+        autosave (debounced)   saveDeck(deckId, payload)
+            │
+        openDeck(deckId)  ──▶  GET /cards/collection (Scryfall)
+                               → full card objects for display
 ```
 
-- **Signed out:** everything lives in `localStorage` (this browser only).
-- **Signed in:** the cloud is your deck *library*. Saving a named deck upserts
-  the `decks` row and rewrites its `deck_cards` rows (ids + qty + board only).
-  Loading a deck fetches those rows and rehydrates them from Scryfall.
-- **First sign-in:** any decks already in `localStorage` are pushed up to your
-  account, so nothing is lost.
+- Every edit (qty, add/remove, tag, rename) triggers a **debounced autosave**
+  (~900ms idle). The builder shows **Saved / Saving… / Save failed**.
+- Tags are **per-deck**. Renaming a tag updates every card that uses it.
+- Import/export use Moxfield-style lines: `1 Sol Ring #ramp #mana`.

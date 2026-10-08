@@ -316,7 +316,7 @@ function addCardToDeck(card, qty = 1) {
   }
   renderDeck();
   renderStats();
-  saveToLocal();
+  queueAutosave();
 }
 
 /* ---------------- SIDEBOARD ---------------- */
@@ -331,7 +331,7 @@ function addCardToSideboard(card, qty = 1) {
   renderSideboard();
   renderStats();
   updateBoardTabs();
-  saveToLocal();
+  queueAutosave();
 }
 
 function changeSideQty(cardId, delta) {
@@ -342,7 +342,7 @@ function changeSideQty(cardId, delta) {
   renderSideboard();
   renderStats();
   updateBoardTabs();
-  saveToLocal();
+  queueAutosave();
 }
 
 function removeFromSideboard(cardId) {
@@ -350,7 +350,7 @@ function removeFromSideboard(cardId) {
   renderSideboard();
   renderStats();
   updateBoardTabs();
-  saveToLocal();
+  queueAutosave();
 }
 
 // Move a sideboard card into the main deck.
@@ -365,7 +365,7 @@ function moveSideToDeck(cardId) {
   renderSideboard();
   renderStats();
   updateBoardTabs();
-  saveToLocal();
+  queueAutosave();
 }
 
 // Move a sideboard card to Considering.
@@ -380,7 +380,7 @@ function moveSideToConsidering(cardId) {
   renderSideboard();
   renderStats();
   updateBoardTabs();
-  saveToLocal();
+  queueAutosave();
 }
 
 // Move a main-deck card into the sideboard.
@@ -396,7 +396,7 @@ function moveDeckToSideboard(cardId) {
   renderSideboard();
   renderStats();
   updateBoardTabs();
-  saveToLocal();
+  queueAutosave();
 }
 
 // Move a Considering card to the sideboard.
@@ -411,7 +411,7 @@ function moveConsideringToSideboard(cardId) {
   renderSideboard();
   renderStats();
   updateBoardTabs();
-  saveToLocal();
+  queueAutosave();
 }
 
 function sideboardCount() {
@@ -432,7 +432,7 @@ function addToConsidering(card, qty = 1) {
   }
   renderConsidering();
   renderStats();
-  saveToLocal();
+  queueAutosave();
 }
 
 function changeConsideringQty(cardId, delta) {
@@ -442,14 +442,14 @@ function changeConsideringQty(cardId, delta) {
   if (entry.qty <= 0) considering = considering.filter((e) => e.id !== cardId);
   renderConsidering();
   renderStats();
-  saveToLocal();
+  queueAutosave();
 }
 
 function removeFromConsidering(cardId) {
   considering = considering.filter((e) => e.id !== cardId);
   renderConsidering();
   renderStats();
-  saveToLocal();
+  queueAutosave();
 }
 
 // Move a considering card into the deck (Moxfield "add to deck" behavior).
@@ -463,7 +463,7 @@ function moveConsideringToDeck(cardId) {
   renderDeck();
   renderConsidering();
   renderStats();
-  saveToLocal();
+  queueAutosave();
 }
 
 function renderConsidering() {
@@ -494,7 +494,7 @@ function changeQty(cardId, delta) {
   }
   renderDeck();
   renderStats();
-  saveToLocal();
+  queueAutosave();
 }
 
 function removeCard(cardId) {
@@ -502,14 +502,14 @@ function removeCard(cardId) {
   if (commanderId === cardId) commanderId = null;
   renderDeck();
   renderStats();
-  saveToLocal();
+  queueAutosave();
 }
 
 // Toggle a deck card as the commander.
 function setCommander(cardId) {
   commanderId = (commanderId === cardId) ? null : cardId;
   renderDeck();
-  saveToLocal();
+  queueAutosave();
 }
 
 // Move a deck card to the Considering board.
@@ -524,7 +524,7 @@ function moveDeckToConsidering(cardId) {
   renderDeck();
   renderConsidering();
   renderStats();
-  saveToLocal();
+  queueAutosave();
 }
 
 /* ============================================================
@@ -912,7 +912,7 @@ function refreshBoard(board) {
   else if (board === "consider") { renderConsidering(); }
   else { renderDeck(); }
   renderStats();
-  saveToLocal();
+  queueAutosave();
 }
 
 // Swap an entry's printing in place, preserving quantity. `board` is the
@@ -1167,7 +1167,7 @@ async function setAllPrintings(mode, triggerBtn) {
   renderConsidering();
   renderStats();
   updateBoardTabs();
-  saveToLocal();
+  queueAutosave();
 
   if (triggerBtn) {
     triggerBtn.disabled = false;
@@ -1413,13 +1413,19 @@ function buildBoardRow(e, board = "main") {
   const priceTitle = unitPrice
     ? `${unitPrice} each · ${formatPrice((parseFloat(e.price_usd) || 0) * e.qty)} total`
     : "Price unknown";
+  const tagChips = (e.tags || []).map((t) =>
+    `<span class="card-tag" title="Remove tag" data-tag="${escapeHtml(t)}">#${escapeHtml(t)}<span class="card-tag-x">×</span></span>`
+  ).join("");
   row.innerHTML = `
     <div class="qty">
       <button data-act="dec" title="Remove one">−</button>
       <span>${e.qty}</span>
       <button data-act="inc" title="Add one">+</button>
     </div>
-    <div class="card-name" title="${escapeHtml(e.name)}">${escapeHtml(e.name)}</div>
+    <div class="card-name-wrap">
+      <div class="card-name" title="${escapeHtml(e.name)}">${escapeHtml(e.name)}</div>
+      <div class="card-tags">${tagChips}<button class="card-tag-add" data-act="addtag" title="Add tag (#tag)">+tag</button></div>
+    </div>
     <div class="mana">${viewOpts.showMana ? manaCostHtml(e.mana_cost) : ""}</div>
     <div class="price${unitPrice ? "" : " empty"}" title="${escapeHtml(priceTitle)}">${viewOpts.showPrices ? (unitPrice || "—") : ""}</div>
     <button class="card-menu-btn" data-act="menu" title="Card actions" aria-haspopup="menu">⋯</button>
@@ -1431,6 +1437,33 @@ function buildBoardRow(e, board = "main") {
     ev.stopPropagation();
     openCardMenu(ev.currentTarget, beh.menu);
   };
+
+  // Tag interactions (stop propagation so they don't trigger drag/menu).
+  row.querySelector('[data-act="addtag"]').onclick = (ev) => {
+    ev.stopPropagation();
+    const t = prompt("Add tag(s), space-separated. Use #name:", "#");
+    if (!t) return;
+    t.split(/\s+/).forEach((tok) => {
+      const name = ensureTag(tok);
+      if (name) mergeTags(e, [name]);
+    });
+    queueAutosave();
+    rerenderBoard(board);
+  };
+  row.querySelectorAll(".card-tag").forEach((chip) => {
+    chip.onclick = (ev) => {
+      ev.stopPropagation();
+      const name = chip.dataset.tag;
+      if (confirm(`Rename tag "#${name}"?\n\nOK = rename, Cancel = remove.`)) {
+        const nn = prompt("Rename tag to:", name);
+        if (nn) renameTag(name, nn);
+      } else {
+        e.tags = (e.tags || []).filter((x) => x !== name);
+        queueAutosave();
+        rerenderBoard(board);
+      }
+    };
+  });
 
   row.addEventListener("dragstart", (ev) => {
     startDrag(ev, { source: beh.source, id: e.id, card: e });
@@ -1739,24 +1772,35 @@ function setPreview(entry) {
 /* ============================================================
    IMPORT / EXPORT
    ============================================================ */
+// Format one deck line: "qty name #tag #tag".
+function exportLine(e) {
+  const tags = (e.tags && e.tags.length) ? " " + e.tags.map((t) => "#" + t).join(" ") : "";
+  return `${e.qty} ${e.name}${tags}`;
+}
+
 function exportDecklist() {
   const lines = [];
   const cmdr = deck.find((e) => e.id === commanderId);
   if (cmdr) {
     lines.push("// Commander");
-    lines.push(`${cmdr.qty} ${cmdr.name}`);
+    lines.push(exportLine(cmdr));
     lines.push("");
   }
   GROUP_ORDER.forEach((g) => {
     const inGroup = deck.filter((e) => cardGroup(e) === g && e.id !== commanderId);
     if (!inGroup.length) return;
     lines.push(`// ${g}`);
-    inGroup.forEach((e) => lines.push(`${e.qty} ${e.name}`));
+    inGroup.forEach((e) => lines.push(exportLine(e)));
     lines.push("");
   });
   if (sideboard.length) {
     lines.push("// Sideboard");
-    sideboard.forEach((e) => lines.push(`SB: ${e.qty} ${e.name}`));
+    sideboard.forEach((e) => lines.push(`SB: ${exportLine(e)}`));
+    lines.push("");
+  }
+  if (considering.length) {
+    lines.push("// Considering");
+    considering.forEach((e) => lines.push(exportLine(e)));
     lines.push("");
   }
   return lines.join("\n").trim();
@@ -1783,9 +1827,13 @@ function parseDecklist(text) {
     const sbMatch = line.match(/^SB:\s*(.+)$/i);
     if (sbMatch) { isSide = true; line = sbMatch[1].trim(); }
 
+    // Extract inline "#tag" tokens (Moxfield style) and remove them from the name.
+    const tags = [];
+    line = line.replace(/(?:^|\s)#([A-Za-z0-9_\-]+)/g, (_, t) => { tags.push(t); return " "; });
+
     // match optional qty at start: "4 ", "4x ", "4 x "
     const m = line.match(/^(\d+)\s*x?\s+(.+)$/i);
-    let qty = 1, name = line;
+    let qty = 1, name = line.trim();
     if (m) {
       qty = parseInt(m[1], 10);
       name = m[2].trim();
@@ -1793,7 +1841,7 @@ function parseDecklist(text) {
     // strip trailing set codes / etc. after a name like "(M21) 123" — keep simple
     name = name.replace(/\s*\([A-Z0-9]+\)\s*\d*$/i, "").trim();
     if (!name) return;
-    entries.push({ qty, name, side: isSide });
+    entries.push({ qty, name, side: isSide, tags });
   });
   return entries;
 }
@@ -1835,27 +1883,28 @@ async function importDecklist(text) {
       if (!notFound.includes(p.name)) notFound.push(p.name);
       return;
     }
-    if (p.side) addCardToSideInternal(card, p.qty);
-    else addCardToDeckInternal(card, p.qty);
+    const tagNames = (p.tags || []).map((t) => ensureTag(t)).filter(Boolean);
+    if (p.side) addCardToSideInternal(card, p.qty, tagNames);
+    else addCardToDeckInternal(card, p.qty, tagNames);
   });
 
-  function addCardToDeckInternal(card, qty) {
+  function addCardToDeckInternal(card, qty, tags) {
     const existing = findDeckEntry(card);
-    if (existing) existing.qty += qty;
-    else deck.push(makeEntry(card, qty));
+    if (existing) mergeTags(existing, tags);
+    else deck.push(mergeEntryTags(makeEntry(card, qty), tags));
   }
 
-  function addCardToSideInternal(card, qty) {
+  function addCardToSideInternal(card, qty, tags) {
     const existing = sideboard.find((e) => e.id === card.id);
-    if (existing) existing.qty += qty;
-    else sideboard.push(makeEntry(card, qty));
+    if (existing) mergeTags(existing, tags);
+    else sideboard.push(mergeEntryTags(makeEntry(card, qty), tags));
   }
 
   renderDeck();
   renderSideboard();
   renderStats();
   updateBoardTabs();
-  saveToLocal();
+  queueAutosave();
 
   // Summarize the result. Call out any names Scryfall couldn't resolve.
   let msg = `Imported ${resolved.length} of ${parsed.length} card(s).`;
@@ -1871,179 +1920,213 @@ async function importDecklist(text) {
 }
 
 /* ============================================================
-   LOCAL STORAGE  (simple multi-deck store)
-   ============================================================ */
-const LS_KEY = "barebones_decks";
-const LS_CURRENT = "barebones_current_deck"; // auto-restored working deck
-
-function loadStore() {
-  try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}"); }
-  catch { return {}; }
-}
-
-// Snapshot the current working deck (cards, considering, sideboard, commander, format).
-function currentDeckSnapshot() {
-  return {
-    name: deckNameEl.value.trim() || "Untitled Deck",
-    cards: deck,
-    considering,
-    sideboard,
-    commanderId,
-    format: selectedFormat(),
-    deckSort,
-    deckGroup,
-    viewOpts,
-    updated: Date.now(),
-  };
-}
-
-// Persist the working deck so it is restored on reload/session restart.
-function saveCurrentDeck() {
-  try { localStorage.setItem(LS_CURRENT, JSON.stringify(currentDeckSnapshot())); }
-  catch {}
-}
-
-// Restore the auto-saved working deck (returns true if one existed).
-function restoreCurrentDeck() {
-  let entry;
-  try { entry = JSON.parse(localStorage.getItem(LS_CURRENT) || "null"); }
-  catch { entry = null; }
-  if (!entry) return false;
-  deck = entry.cards || [];
-  considering = entry.considering || [];
-  sideboard = entry.sideboard || [];
-  commanderId = entry.commanderId || null;
-  deckNameEl.value = entry.name || "Untitled Deck";
-  const fmtEl = $("format-select");
-  if (fmtEl && entry.format !== undefined) fmtEl.value = entry.format;
-  if (entry.deckSort) deckSort = entry.deckSort;
-  if (entry.deckGroup) deckGroup = entry.deckGroup;
-  if (entry.viewOpts) viewOpts = { ...viewOpts, ...entry.viewOpts };
-  syncMenuChecks();
-  return true;
-}
-
-function saveToLocal() {
-  const store = loadStore();
-  const name = deckNameEl.value.trim() || "Untitled Deck";
-  store[name] = { name, cards: deck, considering, sideboard, commanderId, format: selectedFormat(), deckSort, deckGroup, viewOpts, updated: Date.now() };
-  localStorage.setItem(LS_KEY, JSON.stringify(store));
-  // Also keep the working-deck snapshot in sync for auto-restore on reload.
-  saveCurrentDeck();
-  // Mirror to the cloud when signed in (debounced; no-op otherwise).
-  queueCloudSave(name);
-}
-function loadSavedDeck(name) {
-  const store = loadStore();
-  const entry = store[name];
-  if (!entry) return false;
-  deck = entry.cards || [];
-  considering = entry.considering || [];
-  sideboard = entry.sideboard || [];
-  commanderId = entry.commanderId || null;
-  deckNameEl.value = entry.name || name;
-  const fmtEl = $("format-select");
-  if (fmtEl && entry.format !== undefined) fmtEl.value = entry.format;
-  if (entry.deckSort) deckSort = entry.deckSort;
-  if (entry.deckGroup) deckGroup = entry.deckGroup;
-  if (entry.viewOpts) viewOpts = { ...viewOpts, ...entry.viewOpts };
-  syncMenuChecks();
-  renderDeck();
-  renderSideboard();
-  renderConsidering();
-  renderStats();
-  updateBoardTabs();
-  return true;
-}
-
-/* ============================================================
-   CLOUD SYNC (Supabase)  — optional
+   DECK PERSISTENCE  (Supabase-only — no local deck storage)
    ------------------------------------------------------------
-   When the user signs in with Google, named decks are mirrored to
-   a Supabase `decks` table (see supabase/schema.sql). localStorage
-   remains the source of truth for the *current working* deck, so
-   the app keeps working fully offline; cloud sync only adds a
-   cross-device copy of each named deck.
+   Decks live in Supabase, keyed by row id, scoped to the signed-in
+   user. Every mutation triggers a debounced autosave. Only UI
+   preferences (sort/group/view/dock sizes) use localStorage.
 
-   All of this no-ops when window.BarebonesAuth is absent/disabled.
+   `currentDeckId` is the id of the deck open in the builder.
    ============================================================ */
+let currentDeckId = null;          // id of the deck being edited (null = none)
+let currentDeckMeta = {};          // { description, isPublic, colorIdentity }
+
 function cloudAuth() { return window.BarebonesAuth || null; }
 function isCloudEnabled() { const a = cloudAuth(); return !!(a && a.enabled); }
 function isSignedIn() { const a = cloudAuth(); return !!(a && a.getUser && a.getUser()); }
 
-// The user's cloud decks as last listed: [{ id, name, format, commanderId, updated }].
-let cloudDeckIndex = [];
-
-// Turn a local store entry (full card objects) into the DB payload shape:
-// only Scryfall printing ids + quantities + board, never card data.
-function entryToCloudCards(entry) {
-  const out = [];
+// Turn the in-memory boards into the saveDeck payload (ids + qty + board + tags).
+function boardsToPayload() {
+  const cards = [];
   const pushBoard = (arr, board) => {
     (arr || []).forEach((e) => {
-      if (e && e.id) out.push({ id: e.id, qty: e.qty || 1, board });
+      if (e && e.id) cards.push({ id: e.id, qty: e.qty || 1, board, tags: e.tags || [] });
     });
   };
-  // The commander is stored as a deck column, not a card row — skip it here.
-  pushBoard(entry.cards, "main");
-  pushBoard(entry.sideboard, "sideboard");
-  pushBoard(entry.considering, "considering");
-  return out;
+  pushBoard(deck, "main");
+  pushBoard(sideboard, "sideboard");
+  pushBoard(considering, "considering");
+  const ciEl = document.getElementById("deck-color-identity");
+  return {
+    name: deckNameEl.value.trim() || "Untitled Deck",
+    format: selectedFormat(),
+    commanderId: commanderId || null,
+    description: currentDeckMeta.description || "",
+    isPublic: !!currentDeckMeta.isPublic,
+    colorIdentity: (ciEl && ciEl.value) || "",
+    cards,
+  };
 }
 
-// Debounced push of a single named deck to the cloud.
-const pendingCloudSaves = new Map();
-let cloudTimer = null;
-function queueCloudSave(name) {
-  if (!isSignedIn()) return;
-  const store = loadStore();
-  const entry = store[name];
-  if (!entry) return;
-  pendingCloudSaves.set(name, entry);
-  setSyncIndicator("busy");
-  clearTimeout(cloudTimer);
-  cloudTimer = setTimeout(flushCloudSaves, 800);
+/* ---------------- Debounced autosave ---------------- */
+let autosaveTimer = null;
+let saving = false;
+let saveQueued = false;
+
+/** Mark the deck dirty and schedule a debounced autosave (~900ms idle). */
+function queueAutosave() {
+  if (!currentDeckId) return;            // nothing open
+  if (!isSignedIn()) { setSaveStatus("offline"); return; }
+  setSaveStatus("saving");
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(flushAutosave, 900);
 }
-async function flushCloudSaves() {
+
+async function flushAutosave() {
   const a = cloudAuth();
-  if (!a || !isSignedIn() || pendingCloudSaves.size === 0) return;
-  const batch = [...pendingCloudSaves.entries()];
-  pendingCloudSaves.clear();
+  if (!a || !isSignedIn() || !currentDeckId) return;
+  if (saving) { saveQueued = true; return; }  // avoid overlapping writes
+  saving = true;
   try {
-    for (const [name, entry] of batch) {
-      await a.saveDeck(name, {
-        format: entry.format || "",
-        commanderId: entry.commanderId || null,
-        cards: entryToCloudCards(entry),
-      });
-    }
-    setSyncIndicator("ok");
-    // Refresh the local list of cloud decks so the Load menu stays current.
-    refreshCloudIndex();
+    await a.saveDeck(currentDeckId, boardsToPayload());
+    setSaveStatus("saved");
   } catch (err) {
-    console.error("Cloud save failed:", err);
-    setSyncIndicator("error");
+    console.error("Autosave failed:", err);
+    setSaveStatus("error");
+  } finally {
+    saving = false;
+    if (saveQueued) { saveQueued = false; queueAutosave(); }
   }
 }
 
-// Refresh the cached list of the user's cloud decks (names/ids/updated).
-async function refreshCloudIndex() {
-  const a = cloudAuth();
-  if (!a || !isSignedIn()) { cloudDeckIndex = []; return; }
+// Reflect save state in the builder status text + decks-screen dot.
+function setSaveStatus(state) {
+  const el = document.getElementById("builder-save-status");
+  if (el) {
+    el.textContent = ({ saved: "Saved", saving: "Saving…", offline: "Offline", error: "Save failed" })[state] || "";
+    el.dataset.state = state;
+  }
+  const dot = document.getElementById("decks-sync-dot");
+  if (dot) dot.className = "auth-sync-dot" + ({ saved: " ok", saving: " busy", error: " error" }[state] || "");
+}
+
+/* ============================================================
+   SCREEN ROUTER  (home → decks → builder)
+   ============================================================ */
+function showScreen(name) {
+  for (const id of ["screen-home", "screen-decks", "screen-builder"]) {
+    const el = document.getElementById(id);
+    if (el) el.hidden = (id !== "screen-" + name);
+  }
+  window.scrollTo(0, 0);
+}
+
+// Decide which screen to show based on auth state.
+function routeByAuth() {
+  if (!isSignedIn()) { showScreen("home"); return; }
+  renderDecksScreen();
+  showScreen("decks");
+}
+
+/* ============================================================
+   MY DECKS SCREEN
+   ============================================================ */
+async function renderDecksScreen() {
+  const list = document.getElementById("decks-list");
+  const empty = document.getElementById("decks-empty");
+  if (!list) return;
+  list.innerHTML = '<p class="hint">Loading…</p>';
   try {
-    cloudDeckIndex = await a.listDecks();
+    const decks = await cloudAuth().listDecks();
+    list.innerHTML = "";
+    if (!decks.length) { if (empty) empty.hidden = false; return; }
+    if (empty) empty.hidden = true;
+    for (const d of decks) list.appendChild(makeDeckCard(d));
   } catch (err) {
-    console.error("Cloud list failed:", err);
-    cloudDeckIndex = [];
+    console.error("Failed to list decks:", err);
+    list.innerHTML = '<p class="hint">Could not load your decks. Are you online?</p>';
   }
 }
 
-// Rehydrate full card entry objects from a set of Scryfall printing ids
-// via one bulk /cards/collection call. Returns a map: id -> entry.
+function makeDeckCard(d) {
+  const card = document.createElement("div");
+  card.className = "deck-card";
+  card.innerHTML = `
+    <div class="deck-card-main">
+      <div class="deck-card-name"></div>
+      <div class="deck-card-meta">
+        <span class="deck-card-format"></span>
+        <span class="deck-card-updated"></span>
+      </div>
+    </div>
+    <div class="deck-card-actions">
+      <button class="deck-card-delete" title="Delete deck">🗑</button>
+    </div>`;
+  card.querySelector(".deck-card-name").textContent = d.name || "Untitled Deck";
+  card.querySelector(".deck-card-format").textContent = d.commanderId ? "Commander" : (d.format || "No format");
+  card.querySelector(".deck-card-updated").textContent =
+    d.updated ? "edited " + new Date(d.updated).toLocaleDateString() : "";
+  card.addEventListener("click", (e) => {
+    if (e.target.closest(".deck-card-delete")) return;
+    openDeck(d.id);
+  });
+  card.querySelector(".deck-card-delete").addEventListener("click", async (e) => {
+    e.stopPropagation();
+    if (!confirm(`Delete "${d.name}"? This cannot be undone.`)) return;
+    try { await cloudAuth().deleteDeck(d.id); renderDecksScreen(); }
+    catch (err) { alert("Delete failed: " + err.message); }
+  });
+  return card;
+}
+
+async function createNewDeck() {
+  try {
+    const d = await cloudAuth().createDeck("Untitled Deck", "commander");
+    openDeck(d.id);
+  } catch (err) { alert("Could not create deck: " + err.message); }
+}
+
+/* ============================================================
+   OPEN A DECK INTO THE BUILDER
+   ============================================================ */
+async function openDeck(deckId) {
+  const a = cloudAuth();
+  if (!a || !isSignedIn()) { showScreen("home"); return; }
+  setSaveStatus("saving");
+  try {
+    const data = await a.getDeck(deckId);
+    if (!data) { alert("Deck not found."); renderDecksScreen(); return; }
+
+    // Rehydrate card objects from Scryfall (only ids are stored).
+    const cardMap = await rehydrateCardsByIds(data.cards.map((c) => c.scryfall_id));
+
+    deck = []; sideboard = []; considering = []; commanderId = null;
+    data.cards.forEach((c) => {
+      const base = cardMap[c.scryfall_id];
+      if (!base) return;                       // unknown printing; skip
+      const entry = { ...base, qty: c.quantity, tags: c.tags || [] };
+      if (c.board === "sideboard") sideboard.push(entry);
+      else if (c.board === "considering") considering.push(entry);
+      else deck.push(entry);
+    });
+
+    commanderId = data.commanderId || null;
+    deckNameEl.value = data.name || "Untitled Deck";
+    const fmtEl = $("format-select");
+    if (fmtEl) fmtEl.value = data.format || "";
+    const ciEl = document.getElementById("deck-color-identity");
+    if (ciEl) ciEl.value = data.colorIdentity || "";
+
+    currentDeckId = deckId;
+    currentDeckMeta = { description: data.description || "", isPublic: !!data.isPublic };
+    loadTagRegistry(data.tags || []);
+
+    syncMenuChecks();
+    renderDeck(); renderSideboard(); renderConsidering(); renderStats(); updateBoardTabs();
+    setSaveStatus("saved");
+    showScreen("builder");
+  } catch (err) {
+    console.error("Failed to open deck:", err);
+    setSaveStatus("error");
+    alert("Could not open deck: " + err.message);
+  }
+}
+
+/* ---------------- Rehydrate card objects from Scryfall ids ---------------- */
 async function rehydrateCardsByIds(ids) {
   const unique = [...new Set(ids.filter(Boolean))];
   const map = {};
   if (!unique.length) return map;
-  // Scryfall collection is limited to 75 identifiers per request.
   for (let i = 0; i < unique.length; i += 75) {
     const chunk = unique.slice(i, i + 75);
     try {
@@ -2061,105 +2144,96 @@ async function rehydrateCardsByIds(ids) {
   return map;
 }
 
-// Load one cloud deck by name: fetch its rows, rehydrate, populate boards.
-async function loadCloudDeck(name) {
-  const a = cloudAuth();
-  if (!a || !isSignedIn()) return false;
-  const meta = cloudDeckIndex.find((d) => d.name === name);
-  if (!meta) return false;
-  setSyncIndicator("busy");
-  try {
-    const deckData = await a.loadDeck(meta.id);
-    if (!deckData) return false;
-    const cardMap = await rehydrateCardsByIds(deckData.cards.map((c) => c.id));
+/* ============================================================
+   TAG SYSTEM  (per-deck registry; cards reference tag names)
+   ============================================================ */
+let tagRegistry = [];
 
-    deck = [];
-    sideboard = [];
-    considering = [];
-    commanderId = null;
-
-    deckData.cards.forEach((c) => {
-      const base = cardMap[c.id];
-      if (!base) return; // a printing we couldn't resolve; skip
-      const entry = { ...base, qty: c.qty };
-      if (c.board === "sideboard") sideboard.push(entry);
-      else if (c.board === "considering") considering.push(entry);
-      else deck.push(entry);
-    });
-
-    if (deckData.commanderId) commanderId = deckData.commanderId;
-    deckNameEl.value = deckData.name || name;
-    const fmtEl = $("format-select");
-    if (fmtEl && deckData.format !== undefined) fmtEl.value = deckData.format;
-
-    syncMenuChecks();
-    renderDeck(); renderSideboard(); renderConsidering(); renderStats(); updateBoardTabs();
-    setSyncIndicator("ok");
-    return true;
-  } catch (err) {
-    console.error("Cloud load failed:", err);
-    setSyncIndicator("error");
-    return false;
-  }
+function loadTagRegistry(tags) {
+  tagRegistry = (tags || []).map((t) => ({ id: t.id, name: t.name }));
 }
 
-// On sign-in: pull the user's cloud decks, and push up any purely-local decks
-// whose names aren't in the cloud yet. (Cloud owns the deck list; localStorage
-// remains the working cache.)
-async function syncFromCloud() {
-  const a = cloudAuth();
-  if (!a || !isSignedIn()) return;
-  setSyncIndicator("busy");
-  try {
-    await refreshCloudIndex();
-    const cloudNames = new Set(cloudDeckIndex.map((d) => d.name));
-    const store = loadStore();
-    // Push local-only decks so nothing is lost when first signing in.
-    for (const name of Object.keys(store)) {
-      if (!cloudNames.has(name)) queueCloudSave(name);
-    }
-    setSyncIndicator("ok");
-  } catch (err) {
-    console.error("Cloud sync failed:", err);
-    setSyncIndicator("error");
-  }
+// Ensure a tag name exists in the registry; return the canonical name.
+function ensureTag(name) {
+  const clean = String(name || "").trim().replace(/^#/, "");
+  if (!clean) return null;
+  const found = tagRegistry.find((t) => t.name.toLowerCase() === clean.toLowerCase());
+  if (found) return found.name;
+  tagRegistry.push({ id: null, name: clean });
+  return clean;
 }
 
-// Small colored dot in the auth area reflecting sync status.
-function setSyncIndicator(state) {
-  const dot = $("auth-sync-dot");
-  if (!dot) return;
-  dot.className = "auth-sync-dot" + (state ? " " + state : "");
-}
-
-// Reflect auth state in the top-bar UI.
-function renderAuthUI(user) {
-  const area = $("auth-area");
-  const signinBtn = $("auth-signin");
-  const userBox = $("auth-user");
-  if (!area) return;
-  if (!isCloudEnabled()) { area.hidden = true; return; }
-  area.hidden = false;
-
-  if (user) {
-    if (signinBtn) signinBtn.hidden = true;
-    if (userBox) {
-      userBox.hidden = false;
-      const avatar = $("auth-avatar");
-      const nameEl = $("auth-name");
-      const meta = user.user_metadata || {};
-      const label = meta.full_name || meta.name || user.email || "Signed in";
-      if (nameEl) nameEl.textContent = label;
-      if (avatar) {
-        const pic = meta.avatar_url || meta.picture;
-        if (pic) { avatar.src = pic; avatar.hidden = false; }
-        else avatar.hidden = true;
+// Rename a tag across the registry and every card.
+function renameTag(oldName, newName) {
+  const clean = String(newName || "").trim().replace(/^#/, "");
+  if (!clean) return;
+  const t = tagRegistry.find((x) => x.name === oldName);
+  if (t) t.name = clean;
+  for (const board of [deck, sideboard, considering]) {
+    for (const e of board) {
+      if (e.tags && e.tags.includes(oldName)) {
+        e.tags = e.tags.map((n) => (n === oldName ? clean : n));
       }
     }
-  } else {
-    if (signinBtn) signinBtn.hidden = false;
-    if (userBox) userBox.hidden = true;
   }
+  queueAutosave();
+  renderDeck(); renderSideboard(); renderConsidering();
+}
+
+// Re-render a single board by name.
+function rerenderBoard(board) {
+  if (board === "side") renderSideboard();
+  else if (board === "consider") renderConsidering();
+  else renderDeck();
+}
+
+// Merge tag names onto an existing card entry (dedup, case-insensitive).
+function mergeTags(entry, tags) {
+  if (!tags || !tags.length) return entry;
+  entry.tags = entry.tags || [];
+  for (const t of tags) {
+    if (!entry.tags.some((x) => x.toLowerCase() === t.toLowerCase())) entry.tags.push(t);
+  }
+  return entry;
+}
+function mergeEntryTags(entry, tags) { return mergeTags(entry, tags); }
+
+// Remove a tag entirely (registry + every card).
+function deleteTag(name) {
+  tagRegistry = tagRegistry.filter((t) => t.name !== name);
+  for (const board of [deck, sideboard, considering]) {
+    for (const e of board) {
+      if (e.tags) e.tags = e.tags.filter((n) => n !== name);
+    }
+  }
+  queueAutosave();
+  renderDeck(); renderSideboard(); renderConsidering();
+}
+
+/* ---------------- Auth-aware UI bits ---------------- */
+function renderAuthUI(user) {
+  const meta = (user && user.user_metadata) || {};
+  const label = meta.full_name || meta.name || (user && user.email) || "Signed in";
+  const pic = meta.avatar_url || meta.picture;
+
+  const homeSignin = document.getElementById("home-signin");
+  const homeNote = document.getElementById("home-note");
+  if (homeSignin) homeSignin.hidden = !!user;
+  if (homeNote) homeNote.textContent = user ? "" : "Sign in to continue.";
+
+  const userBox = document.getElementById("decks-user");
+  if (userBox) {
+    userBox.hidden = !user;
+    const nameEl = document.getElementById("decks-name");
+    const av = document.getElementById("decks-avatar");
+    if (nameEl) nameEl.textContent = label;
+    if (av) { if (pic) { av.src = pic; av.hidden = false; } else av.hidden = true; }
+  }
+}
+
+// Kept as a hook for menu wiring.
+async function syncFromCloud() {
+  if (isSignedIn()) { renderDecksScreen(); showScreen("decks"); }
 }
 
 /* ============================================================
@@ -2519,7 +2593,7 @@ const formatSelectEl = $("format-select");
 if (formatSelectEl) {
   formatSelectEl.addEventListener("change", () => {
     syncMenuChecks();
-    saveToLocal();
+    queueAutosave();
     if (searchInput.value.trim()) runSearch(searchInput.value);
   });
 }
@@ -2557,7 +2631,6 @@ if (deckFilterEl) {
 }
 if (considerFilterEl) considerFilterEl.addEventListener("input", renderConsidering);
 if (sideFilterEl) sideFilterEl.addEventListener("input", renderSideboard);
-deckNameEl.addEventListener("change", saveToLocal);
 
 // --- Collapsible / resizable board docks (Considering, Sideboard) ---
 // Each dock can be expanded/collapsed and its height dragged; both the open
@@ -2611,20 +2684,34 @@ function initAuthUI() {
   a.onChange((user) => {
     renderAuthUI(user);
     if (user) {
-      // On sign-in, reconcile cloud + local decks.
-      syncFromCloud();
+      // Signed in → go to the deck library.
+      renderDecksScreen();
+      showScreen("decks");
     } else {
-      setSyncIndicator("");
+      // Signed out → back to the home screen.
+      currentDeckId = null;
+      setSaveStatus("offline");
+      showScreen("home");
     }
   });
 
-  const signinBtn = $("auth-signin");
-  if (signinBtn) signinBtn.addEventListener("click", () => a.signInWithGoogle());
-  const signoutBtn = $("auth-signout");
-  if (signoutBtn) signoutBtn.addEventListener("click", () => a.signOut());
+  // Home / decks screen buttons.
+  const homeSignin = document.getElementById("home-signin");
+  if (homeSignin) homeSignin.addEventListener("click", () => a.signInWithGoogle());
+  const decksSignout = document.getElementById("decks-signout");
+  if (decksSignout) decksSignout.addEventListener("click", () => a.signOut());
+  const newDeckBtn2 = document.getElementById("new-deck-btn-2");
+  if (newDeckBtn2) newDeckBtn2.addEventListener("click", createNewDeck);
+  const backBtn = document.getElementById("back-to-decks");
+  if (backBtn) backBtn.addEventListener("click", async () => {
+    await flushAutosave();          // make sure pending edits are saved
+    renderDecksScreen();
+    showScreen("decks");
+  });
 
-  // If already signed in (e.g. returning from OAuth redirect), sync now.
-  if (a.getUser()) syncFromCloud();
+  // If already signed in (e.g. returning from OAuth redirect), go to decks.
+  if (a.getUser()) { renderDecksScreen(); showScreen("decks"); }
+  else showScreen("home");
   return true;
 }
 
@@ -2639,6 +2726,11 @@ if (isCloudEnabled()) {
       if (initAuthUI()) clearInterval(t);
     }, { once: true });
   }
+} else {
+  // No backend configured — show the home screen with a helpful note.
+  const note = document.getElementById("home-note");
+  if (note) note.textContent = "Cloud storage isn't configured. Fill in supabase-config.js to sign in.";
+  showScreen("home");
 }
 
 // --- Card actions menu: close on outside click / Escape / scroll / resize ---
@@ -2659,47 +2751,26 @@ document.addEventListener("keydown", (ev) => {
 window.addEventListener("resize", closeCardMenu);
 document.addEventListener("scroll", () => { if (isCardMenuOpen()) closeCardMenu(); }, true);
 
-const newDeckBtn = $("new-deck");
-if (newDeckBtn) newDeckBtn.addEventListener("click", () => {
-  if ((deck.length || considering.length || sideboard.length) && !confirm("Discard current deck and start a new one?")) return;
-  deck = [];
-  considering = [];
-  sideboard = [];
-  commanderId = null;
-  deckNameEl.value = "Untitled Deck";
-  renderDeck(); renderSideboard(); renderConsidering(); renderStats(); saveToLocal();
-});
+// "New deck" lives on the My Decks screen; it creates a backend row then opens it.
+const newDeckBtn = $("new-deck-btn");
+if (newDeckBtn) newDeckBtn.addEventListener("click", createNewDeck);
 
-const saveDeckBtn = $("save-deck");
-if (saveDeckBtn) saveDeckBtn.addEventListener("click", () => {
-  saveToLocal();
-  alert(`Saved "${deckNameEl.value.trim() || "Untitled Deck"}".`);
-});
+// Deck name changes autosave.
+deckNameEl.addEventListener("change", () => queueAutosave());
+deckNameEl.addEventListener("input", () => queueAutosave());
 
-const loadDeckBtn = $("load-deck");
-if (loadDeckBtn) loadDeckBtn.addEventListener("click", async () => {
-  // When signed in, the cloud is the deck library (Moxfield-style): list the
-  // user's cloud decks. Otherwise fall back to the local browser store.
-  if (isSignedIn()) {
-    await refreshCloudIndex();
-    if (!cloudDeckIndex.length) return alert("No decks in your account yet. Build one and hit Save.");
-    const names = cloudDeckIndex.map((d) => d.name);
-    const name = prompt("Load which deck?\n\n" + names.map((n, i) => `${i + 1}. ${n}`).join("\n"), names[0]);
-    if (!name) return;
-    const idx = parseInt(name, 10);
-    const chosen = names[idx - 1] || name;
-    if (!(await loadCloudDeck(chosen))) alert("Deck not found: " + chosen);
-    return;
-  }
-  // --- Local (signed-out) path ---
-  const store = loadStore();
-  const names = Object.keys(store);
-  if (!names.length) return alert("No saved decks.");
-  const name = prompt("Load which deck?\n\n" + names.map((n, i) => `${i + 1}. ${n}`).join("\n"), names[0]);
-  if (!name) return;
-  const idx = parseInt(name, 10);
-  const chosen = names[idx - 1] || name;
-  if (!loadSavedDeck(chosen)) alert("Deck not found: " + chosen);
+// Delete the current deck then return to the library.
+const deleteDeckBtn = $("delete-deck");
+if (deleteDeckBtn) deleteDeckBtn.addEventListener("click", async () => {
+  if (!currentDeckId) return;
+  if (!confirm("Delete this deck permanently?")) return;
+  try {
+    clearTimeout(autosaveTimer);
+    await cloudAuth().deleteDeck(currentDeckId);
+    currentDeckId = null;
+    renderDecksScreen();
+    showScreen("decks");
+  } catch (err) { alert("Delete failed: " + err.message); }
 });
 
 const exportDeckBtn = $("export-deck");
@@ -2774,13 +2845,8 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
-// Initial render — restore the auto-saved working deck if there is one.
-restoreCurrentDeck();
-renderDeck();
-renderSideboard();
-renderConsidering();
-renderStats();
-updateBoardTabs();
+// Initial render — start on the home screen; auth init routes onward.
+// (View prefs are applied by applyViewPrefs() during menu setup above.)
 
 // Warm the printings cache for cards already in the deck (idle, non-blocking),
 // so opening the picker or running a bulk swap is instant next time.
@@ -2790,8 +2856,10 @@ if ("requestIdleCallback" in window) {
   setTimeout(prefetchDeckPrintings, 1500);
 }
 
-// Keep the working deck saved even if the tab is closed without an explicit save.
-window.addEventListener("beforeunload", saveCurrentDeck);
+// Flush any pending autosave before the tab closes.
+window.addEventListener("beforeunload", () => {
+  if (currentDeckId && isSignedIn()) { try { flushAutosave(); } catch {} }
+});
 
 /* ============================================================
    SERVER LIFECYCLE
