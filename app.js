@@ -2677,23 +2677,38 @@ if (searchPanelEl) setupDropTarget(searchPanelEl, handleDropOnSearch, ["deck", "
    user immediately. That means we never miss the sign-in that results from
    exchanging the OAuth ?code= in the URL on the redirect back. */
 let authUIInitialized = false;
-let lastRoutedUser = undefined;   // undefined = never routed; null = routed signed-out
+let lastRoutedUserId = undefined;   // undefined = never routed; null = routed signed-out
 
 // Route to the correct screen for a given (possibly null) user.
+//
+// This is called every time auth state changes (and replayed immediately on
+// subscribe), so it must be idempotent: routing to the same screen twice must
+// not re-fetch the deck list or blow away the screen the user is on.
+//
+// Crucially, a null user is only acted on once auth has actually RESOLVED.
+// While the OAuth ?code= from the Google redirect is still being exchanged,
+// `isReady()` is false and we simply wait — otherwise we'd flash the login
+// page and yank the user back before the session lands.
 function routeForUser(user) {
-  // Signed in → the deck library.
+  const a = cloudAuth();
+  const ready = !a || !a.isReady || a.isReady();
+
   if (user) {
-    if (lastRoutedUser) return;        // already showing decks; don't reload
-    lastRoutedUser = user;
+    const id = user.id || user;
+    if (lastRoutedUserId === id) return;   // already routed for this user
+    lastRoutedUserId = id;
+    renderAuthUI(user);
     renderDecksScreen();
     showScreen("decks");
     return;
   }
-  // Signed out → home (only after auth has actually resolved).
-  const a = cloudAuth();
-  if (a && a.isReady && !a.isReady()) return;   // still resolving the redirect
-  lastRoutedUser = null;
+
+  // user is null here.
+  if (!ready) return;                       // still resolving — don't route yet
+  if (lastRoutedUserId === null) return;    // already on the signed-out screen
+  lastRoutedUserId = null;
   currentDeckId = null;
+  renderAuthUI(null);
   setSaveStatus("offline");
   showScreen("home");
 }
@@ -2705,8 +2720,9 @@ function initAuthUI() {
   authUIInitialized = true;
 
   // onChange replays immediately, so this also handles "already signed in".
+  // renderAuthUI() is called from inside routeForUser(), which also owns the
+  // "don't re-route while the OAuth redirect is still resolving" logic.
   a.onChange((user) => {
-    renderAuthUI(user);
     routeForUser(user);
   });
 

@@ -1,4 +1,6 @@
+
 /* ============================================================
+
    AUTH + CLOUD SYNC  (Supabase)
    ------------------------------------------------------------
    This file is loaded as an ES module (type="module") because
@@ -45,23 +47,76 @@ if (enabled) {
 
   // Keep `currentUser` in sync with the session.
   //
-  // `onAuthStateChange` fires for every change, including the SIGNED_IN that
-  // results from exchanging the OAuth ?code= in the URL. We mark auth as
-  // "ready" as soon as we hear anything (or when getSession resolves, below).
+  // ORDERING — this is what caused "redirected back to the login page":
+  //
+  // On the return from Google, supabase-js exchanges the ?code= inside its
+  // internal initializePromise, saves the session, and THEN emits SIGNED_IN
+  // from a `setTimeout(..., 0)`. Both onAuthStateChange and getSession()
+  // resolve on that same initializePromise, so they run BEFORE the SIGNED_IN
+  // notification. INITIAL_SESSION in particular fires first and carries
+  // session=null whenever a redirect exchange is still pending.
+  //
+  // The old code marked authReady on INITIAL_SESSION/getSession and called
+  // emit() with currentUser=null, so app.js routed to the signed-out screen a
+  // moment before SIGNED_IN arrived — i.e. straight back to the login page.
+  //
+  // Now only SIGNED_IN / SIGNED_OUT (or a non-null INITIAL_SESSION) are
+  // authoritative. A null INITIAL_SESSION means "still resolving".
   supabase.auth.onAuthStateChange((event, session) => {
-    currentUser = session?.user ?? null;
-    if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "INITIAL_SESSION") {
-      authReady = true;
+    if (event === "INITIAL_SESSION") {
+      // Already signed in with no redirect pending: adopt it now. A null
+      // session here does NOT mean signed out — a redirect may be in flight.
+      if (session?.user) {
+        currentUser = session.user;
+        authReady = true;
+        emit();
+      }
+      return;
     }
+    if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+      if (!session?.user) return;   // ignore valueless notifications
+      currentUser = session.user;
+      authReady = true;
+      emit();
+      return;
+    }
+    if (event === "SIGNED_OUT") {
+      currentUser = null;
+      authReady = true;
+      emit();
+    }
+  });
+
+  // Fallback only: resolve once initialization settles if no authoritative
+  // event has decided. Guarded by authReady so it can never clobber a real
+  // SIGNED_IN.
+  supabase.auth.getSession().then(({ data }) => {
+    window.dispatchEvent(new CustomEvent("barebones-auth-ready"));
+    if (authReady) return;             // a real event already decided
+    const u = data?.session?.user ?? null;
+    if (u) currentUser = u;
+    authReady = true;
     emit();
   });
 
-  supabase.auth.getSession().then(({ data }) => {
-    currentUser = data?.session?.user ?? null;
-    authReady = true;
-    emit();
-    window.dispatchEvent(new CustomEvent("barebones-auth-ready"));
-  });
+  // Safety net: if the redirect exchange fails or no event ever arrives
+  // (Google cancelled, code already used, network blip), stop waiting so the
+  // app isn't stuck on a blank screen. Harmless if auth already resolved.
+  setTimeout(() => {
+    if (authReady) return;
+    supabase.auth.getSession()
+      .then(({ data }) => {
+        if (authReady) return;
+        currentUser = data?.session?.user ?? null;
+        authReady = true;
+        emit();
+      })
+      .catch(() => {
+        if (authReady) return;
+        authReady = true;
+        emit();
+      });
+  }, 4000);
 }
 
 /** Map a `decks` DB row to the shape the app uses. */
@@ -71,8 +126,6 @@ function mapDeckRow(r) {
     name: r.name,
     format: r.format || "",
     commanderId: r.commander_scryfall_id || null,
-    description: r.description || "",
-    isPublic: !!r.is_public,
     colorIdentity: r.color_identity || "",
     updated: r.updated_at ? Date.parse(r.updated_at) : Date.now(),
   };
@@ -92,7 +145,6 @@ const api = {
 
   /**
    * Subscribe to auth changes; returns an unsubscribe function.
-   * The listener is invoked IMMEDIATELY with the current state so a late
    * subscriber (e.g. app.js loading after the OAuth code was exchanged)
    * never misses the sign-in that already happened.
    */
@@ -104,7 +156,6 @@ const api = {
 
   /** Start the Google OAuth flow (redirects away and back). */
   async signInWithGoogle() {
-    if (!enabled) return;
     // Build the return URL from the current page, but WITHOUT a trailing slash.
     // Supabase's Redirect-URL allow-list rejects entries ending in "/", and
     // GitHub Pages project sites live at a path like /<repo>/ — so we keep the
