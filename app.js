@@ -2692,14 +2692,16 @@ let lastRoutedUserId = undefined;   // undefined = never routed; null = routed s
 function routeForUser(user) {
   const a = cloudAuth();
   const ready = !a || !a.isReady || a.isReady();
+  console.log("[auth-debug] routeForUser:", user ? user.email : null, "| ready:", ready, "| lastRouted:", lastRoutedUserId);
 
   if (user) {
     const id = user.id || user;
-    if (lastRoutedUserId === id) return;   // already routed for this user
+    if (lastRoutedUserId === id) { console.log("[auth-debug] routeForUser: dedup, already on decks"); return; }
     lastRoutedUserId = id;
     renderAuthUI(user);
     renderDecksScreen();
     showScreen("decks");
+    console.log("[auth-debug] routeForUser: -> showScreen(decks)");
     return;
   }
 
