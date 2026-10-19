@@ -23,6 +23,9 @@ const enabled = Boolean(cfg.enabled && cfg.url && cfg.anonKey);
 
 let supabase = null;
 let currentUser = null;
+// Whether the initial session restore (incl. OAuth ?code= exchange) has
+// finished. Until then, the app can't know if the user is signed in yet.
+let authReady = false;
 
 const listeners = new Set();
 function emit() {
@@ -41,13 +44,23 @@ if (enabled) {
   });
 
   // Keep `currentUser` in sync with the session.
-  supabase.auth.getSession().then(({ data }) => {
-    currentUser = data?.session?.user ?? null;
+  //
+  // `onAuthStateChange` fires for every change, including the SIGNED_IN that
+  // results from exchanging the OAuth ?code= in the URL. We mark auth as
+  // "ready" as soon as we hear anything (or when getSession resolves, below).
+  supabase.auth.onAuthStateChange((event, session) => {
+    currentUser = session?.user ?? null;
+    if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "INITIAL_SESSION") {
+      authReady = true;
+    }
     emit();
   });
-  supabase.auth.onAuthStateChange((_event, session) => {
-    currentUser = session?.user ?? null;
+
+  supabase.auth.getSession().then(({ data }) => {
+    currentUser = data?.session?.user ?? null;
+    authReady = true;
     emit();
+    window.dispatchEvent(new CustomEvent("barebones-auth-ready"));
   });
 }
 
@@ -74,8 +87,20 @@ const api = {
   /** Current user (or null). */
   getUser() { return currentUser; },
 
-  /** Subscribe to auth changes; returns an unsubscribe function. */
-  onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+  /** True once the initial session restore (incl. OAuth redirect) is done. */
+  isReady() { return authReady; },
+
+  /**
+   * Subscribe to auth changes; returns an unsubscribe function.
+   * The listener is invoked IMMEDIATELY with the current state so a late
+   * subscriber (e.g. app.js loading after the OAuth code was exchanged)
+   * never misses the sign-in that already happened.
+   */
+  onChange(fn) {
+    listeners.add(fn);
+    try { fn(currentUser); } catch (e) { console.error(e); }
+    return () => listeners.delete(fn);
+  },
 
   /** Start the Google OAuth flow (redirects away and back). */
   async signInWithGoogle() {
@@ -323,5 +348,7 @@ const api = {
 
 window.BarebonesAuth = api;
 
-// Let app.js know auth has initialized (in case it loaded before us).
+// If app.js loaded before us, tell it auth is available. (The "ready" event
+// that means "session resolved" is dispatched separately, above, from inside
+// the getSession() promise.)
 window.dispatchEvent(new CustomEvent("barebones-auth-ready"));

@@ -2671,28 +2671,43 @@ if (searchPanelEl) setupDropTarget(searchPanelEl, handleDropOnSearch, ["deck", "
 /* ---------------- Auth / cloud sync wiring (optional) ----------------
    The Supabase auth module is loaded as an ES module and may not be ready
    yet when this classic script runs, so we wait for either the ready event
-   or (if it already fired) a poll. Everything no-ops if Supabase is off. */
+   or (if it already fired) a poll. Everything no-ops if Supabase is off.
+
+   Routing relies on BarebonesAuth.onChange(), which REPLAYS the current
+   user immediately. That means we never miss the sign-in that results from
+   exchanging the OAuth ?code= in the URL on the redirect back. */
 let authUIInitialized = false;
+let lastRoutedUser = undefined;   // undefined = never routed; null = routed signed-out
+
+// Route to the correct screen for a given (possibly null) user.
+function routeForUser(user) {
+  // Signed in → the deck library.
+  if (user) {
+    if (lastRoutedUser) return;        // already showing decks; don't reload
+    lastRoutedUser = user;
+    renderDecksScreen();
+    showScreen("decks");
+    return;
+  }
+  // Signed out → home (only after auth has actually resolved).
+  const a = cloudAuth();
+  if (a && a.isReady && !a.isReady()) return;   // still resolving the redirect
+  lastRoutedUser = null;
+  currentDeckId = null;
+  setSaveStatus("offline");
+  showScreen("home");
+}
+
 function initAuthUI() {
   if (authUIInitialized) return true;
   const a = cloudAuth();
   if (!a) return false;
   authUIInitialized = true;
 
-  // Toggle the sign-in / user chip based on auth state.
-  renderAuthUI(a.getUser());
+  // onChange replays immediately, so this also handles "already signed in".
   a.onChange((user) => {
     renderAuthUI(user);
-    if (user) {
-      // Signed in → go to the deck library.
-      renderDecksScreen();
-      showScreen("decks");
-    } else {
-      // Signed out → back to the home screen.
-      currentDeckId = null;
-      setSaveStatus("offline");
-      showScreen("home");
-    }
+    routeForUser(user);
   });
 
   // Home / decks screen buttons.
@@ -2709,9 +2724,9 @@ function initAuthUI() {
     showScreen("decks");
   });
 
-  // If already signed in (e.g. returning from OAuth redirect), go to decks.
-  if (a.getUser()) { renderDecksScreen(); showScreen("decks"); }
-  else showScreen("home");
+  // If auth is already resolved (e.g. fast module load), route now; otherwise
+  // the getSession() promise will emit and route once it resolves.
+  if (a.isReady && a.isReady()) routeForUser(a.getUser());
   return true;
 }
 
