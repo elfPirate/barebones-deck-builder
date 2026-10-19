@@ -1,6 +1,16 @@
 -- ============================================================
 -- Barebones Deck Builder — Migration 001: deck metadata + tags
 -- ------------------------------------------------------------
+-- ⚠️  SUPERSEDED — you do NOT need to run this file any more.
+--     Everything below is now part of the consolidated
+--     `supabase/schema.sql`, which is the single source of truth.
+--
+--     • Fresh install  → run ONLY `supabase/schema.sql`.
+--     • Already ran this → nothing to do; re-running schema.sql is
+--       safe and will not drop data.
+--
+--     Kept only as a historical record. Do not add new schema here.
+--
 -- Run in the Supabase dashboard: SQL Editor → New query → paste → Run.
 --
 -- ADDITIVE ONLY — nothing is dropped, so existing cloud decks keep

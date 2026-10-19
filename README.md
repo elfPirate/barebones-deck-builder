@@ -146,7 +146,8 @@ Full reference: https://scryfall.com/docs/syntax
 - `app.js` — Scryfall integration + deck logic
 - `supabase-config.js` — **your** Supabase URL + anon key (blank = local-only)
 - `auth.js` — Google sign-in + cloud deck CRUD (ES module)
-- `supabase/schema.sql` — DB tables + Row Level Security policies
+- `supabase/schema.sql` — **complete** DB schema: tables, indexes, triggers, helper functions, and Row Level Security policies (idempotent)
+- `supabase/migrations/001_tags_and_metadata.sql` — superseded; its contents are now in `schema.sql`
 - `SUPABASE_SETUP.md` — step-by-step setup for Google sign-in + cloud storage
 - `serve.py` — tiny static server that auto-shuts down when the tab closes
 - `Open Deck Builder.command` — double-clickable launcher for `serve.py`

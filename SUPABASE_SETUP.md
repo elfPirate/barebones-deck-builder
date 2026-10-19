@@ -31,15 +31,18 @@ Home (sign in)  →  My Decks (library)  →  Deck Builder (autosaves)
 
 ## Part 2 — Create the tables + security rules (~1 min)
 
-There are **two** SQL files; run them **in order** via
-**SQL Editor → New query → paste → Run**:
+Run **one** SQL file via **SQL Editor → New query → paste → Run**:
 
-1. [`supabase/schema.sql`](supabase/schema.sql) — base tables.
-2. [`supabase/migrations/001_tags_and_metadata.sql`](supabase/migrations/001_tags_and_metadata.sql)
-   — deck metadata + the tag system. **Additive & idempotent** (safe to re-run;
-   never drops data).
+1. [`supabase/schema.sql`](supabase/schema.sql) — the complete schema: all four
+   tables, indexes, triggers, helper functions, and Row Level Security.
 
-After both, you have:
+It is **fully idempotent** — re-running it is safe and never drops data, so you
+can paste it again any time to repair a half-applied setup.
+
+> `supabase/migrations/001_tags_and_metadata.sql` is **superseded**. Its
+> contents were folded into `schema.sql`; do not run it separately.
+
+After it runs, you have:
 
 | Table | Holds |
 |---|---|
@@ -155,8 +158,8 @@ Supabase needs a Google "client ID" and "client secret" so it can talk to Google
 | No sign-in button | `supabase-config.js` still has blank `url`/`anonKey`. |
 | `redirect_uri_mismatch` from Google | The Supabase callback URL in Google's redirect URIs must exactly match `https://<ref>.supabase.co/auth/v1/callback`. |
 | Redirects to `localhost` after sign-in | Update **Site URL** and **Redirect URLs** in Supabase to your GitHub Pages URL. |
-| Signed in, but "row level security" error | You skipped a SQL file in Part 2, or RLS is on with no policies. Re-run both files. |
-| Deck save fails silently | Missing `decks`/`deck_cards`/`deck_tags` tables — run the migration (Part 2). |
+| Signed in, but "row level security" error | You skipped the SQL file in Part 2, or RLS is on with no policies. Re-run `supabase/schema.sql` — it is idempotent and will recreate any missing policies. |
+| Deck save fails silently | Missing `decks`/`deck_cards`/`deck_tags` tables — run `supabase/schema.sql` (Part 2). |
 | A card shows as missing after loading on another device | Its printing was removed/renamed by Scryfall; the rehydrate step skips ids Scryfall no longer returns. |
 
 ---
