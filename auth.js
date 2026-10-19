@@ -42,81 +42,52 @@ if (enabled) {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true, // handles the OAuth redirect back
+      flowType: "pkce",         // one-time ?code= exchange; no tokens in URL
     },
   });
 
-  // Keep `currentUser` in sync with the session.
-  //
-  // ORDERING — this is what caused "redirected back to the login page":
-  //
-  // On the return from Google, supabase-js exchanges the ?code= inside its
-  // internal initializePromise, saves the session, and THEN emits SIGNED_IN
-  // from a `setTimeout(..., 0)`. Both onAuthStateChange and getSession()
-  // resolve on that same initializePromise, so they run BEFORE the SIGNED_IN
-  // notification. INITIAL_SESSION in particular fires first and carries
-  // session=null whenever a redirect exchange is still pending.
-  //
-  // The old code marked authReady on INITIAL_SESSION/getSession and called
-  // emit() with currentUser=null, so app.js routed to the signed-out screen a
-  // moment before SIGNED_IN arrived — i.e. straight back to the login page.
-  //
-  // Now only SIGNED_IN / SIGNED_OUT (or a non-null INITIAL_SESSION) are
-  // authoritative. A null INITIAL_SESSION means "still resolving".
-  supabase.auth.onAuthStateChange((event, session) => {
-    if (event === "INITIAL_SESSION") {
-      // Already signed in with no redirect pending: adopt it now. A null
-      // session here does NOT mean signed out — a redirect may be in flight.
-      if (session?.user) {
-        currentUser = session.user;
-        authReady = true;
-        emit();
-      }
-      return;
-    }
-    if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
-      if (!session?.user) return;   // ignore valueless notifications
-      currentUser = session.user;
-      authReady = true;
+  // Single source of truth for "who is signed in". We resolve it ONCE by
+  // awaiting getSession() (which, on the redirect back, waits for the PKCE
+  // code exchange to finish), THEN mark ready and emit. Auth-state events
+  // arriving later just update the same state. This removes all dependence
+  // on the INITIAL_SESSION-vs-SIGNED_IN ordering that caused the bounce.
+  function adoptSession(session, source) {
+    const user = session?.user ?? null;
+    const changed = (user?.id ?? null) !== (currentUser?.id ?? null);
+    currentUser = user;
+    authReady = true;
+    if (changed || source) {
+      console.log("[auth-debug] adoptSession from", source, "->", user?.email ?? null);
       emit();
-      return;
     }
+  }
+
+  // 1) Primary resolution: await the initialization/exchange, then adopt.
+  supabase.auth.getSession().then(({ data, error }) => {
+    if (error) console.warn("[auth-debug] getSession error:", error);
+    adoptSession(data?.session, "getSession");
+  });
+
+  // 2) Keep in sync with later events (refresh, sign-out, second tab).
+  supabase.auth.onAuthStateChange((event, session) => {
+    console.log("[auth-debug] event:", event, "| session user:", session?.user?.email ?? null);
     if (event === "SIGNED_OUT") {
       currentUser = null;
       authReady = true;
       emit();
+      return;
     }
+    if (session?.user) adoptSession(session, "event:" + event);
   });
 
-  // Fallback only: resolve once initialization settles if no authoritative
-  // event has decided. Guarded by authReady so it can never clobber a real
-  // SIGNED_IN.
-  supabase.auth.getSession().then(({ data }) => {
-    window.dispatchEvent(new CustomEvent("barebones-auth-ready"));
-    if (authReady) return;             // a real event already decided
-    const u = data?.session?.user ?? null;
-    if (u) currentUser = u;
-    authReady = true;
-    emit();
-  });
-
-  // Safety net: if the redirect exchange fails or no event ever arrives
-  // (Google cancelled, code already used, network blip), stop waiting so the
-  // app isn't stuck on a blank screen. Harmless if auth already resolved.
+  // 3) Safety net: if nothing resolved after a few seconds (e.g. a failed
+  //    exchange with no event), stop waiting so the UI isn't stuck.
   setTimeout(() => {
     if (authReady) return;
-    supabase.auth.getSession()
-      .then(({ data }) => {
-        if (authReady) return;
-        currentUser = data?.session?.user ?? null;
-        authReady = true;
-        emit();
-      })
-      .catch(() => {
-        if (authReady) return;
-        authReady = true;
-        emit();
-      });
-  }, 4000);
+    console.warn("[auth-debug] safety net fired; resolving as signed-out");
+    authReady = true;
+    emit();
+  }, 5000);
 }
 
 /** Map a `decks` DB row to the shape the app uses. */
@@ -405,7 +376,17 @@ window.BarebonesAuth = api;
   const loc = window.location;
   console.log("[auth-debug] page URL:", loc.href);
   console.log("[auth-debug] has ?code=:", loc.search.includes("code="),
-              "| has #access_token:", loc.hash.includes("access_token"));
+
+              "| has #access_token:", loc.hash.includes("access_token"),
+              "| raw hash:", loc.hash);
+  // If Supabase bounced back with an error, it puts it in the hash/query.
+  const hash = new URLSearchParams(loc.hash.replace(/^#/, ""));
+  const query = new URLSearchParams(loc.search);
+  if (hash.get("error") || query.get("error")) {
+    console.error("[auth-debug] OAUTH ERROR:",
+      hash.get("error") || query.get("error"),
+      "-", hash.get("error_description") || query.get("error_description"));
+  }
   api.onChange((u) => {
     console.log("[auth-debug] onChange user:", u ? u.email : null, "| isReady:", api.isReady());
   });
