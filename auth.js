@@ -399,6 +399,21 @@ const api = {
 
 window.BarebonesAuth = api;
 
+// --- TEMP DEBUG: trace the auth lifecycle on the console ---
+(function debugAuth() {
+  if (!enabled) return;
+  const loc = window.location;
+  console.log("[auth-debug] page URL:", loc.href);
+  console.log("[auth-debug] has ?code=:", loc.search.includes("code="),
+              "| has #access_token:", loc.hash.includes("access_token"));
+  api.onChange((u) => {
+    console.log("[auth-debug] onChange user:", u ? u.email : null, "| isReady:", api.isReady());
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    console.warn("[auth-debug] unhandledrejection:", e.reason);
+  });
+})();
+
 // If app.js loaded before us, tell it auth is available. (The "ready" event
 // that means "session resolved" is dispatched separately, above, from inside
 // the getSession() promise.)
