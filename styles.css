@@ -946,6 +946,10 @@ body.row-resizing { cursor: row-resize; user-select: none; }
 .auth-sync-dot.error { background: var(--danger); }
 
 /* ===== SCREENS (home / decks / builder) ===== */
+/* Make the `hidden` attribute authoritative. Without this, a class rule like
+   `.home-screen { display: flex }` overrides the UA `[hidden]{display:none}`,
+   so elements marked `hidden` (e.g. once a user signs in) stay visible. */
+[hidden] { display: none !important; }
 .screen { min-height: 100vh; }
 
 /* ---- Home (sign in) ---- */
